@@ -1,0 +1,44 @@
+{
+  "name": "coniglio",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A minimal, elegant, and robust async RabbitMQ client for Node.js",
+  "main": "index.cjs",
+  "module": "lib/index.esm.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "npm run build",
+    "lint": "eslint ."
+  },
+  "exports": {
+    ".": {
+      "import": "./lib/index.esm.js",
+      "require": "./index.cjs"
+    }
+  },
+  "files": [
+    "lib/",
+    "index.cjs",
+    "types/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "keywords": [],
+  "author": "Michele Triaca <michele.triaca@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "amqplib": "^0.10.8",
+    "p-map": "^7.0.3"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.7",
+    "@types/node": "^24.0.3",
+    "eslint": "^9.29.0",
+    "neostandard": "^0.12.1",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}
