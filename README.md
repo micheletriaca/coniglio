@@ -2,7 +2,7 @@
 
 > A minimal, elegant, and robust async RabbitMQ client for Node.js
 
-<img align="left" height="180" alt="Fastest full PostgreSQL nodejs client" src="logo.png">
+<img align="left" height="180" alt="Fastest full PostgreSQL nodejs client" src="https://raw.githubusercontent.com/micheletriaca/coniglio/refs/heads/master/logo.png">
 
 <br/>
 
