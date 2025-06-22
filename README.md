@@ -6,7 +6,7 @@
 
 <br/>
 
-**coniglio** is a modern wrapper around RabbitMQ designed to be dead-simple to use, resilient in production, and fully composable with async iterators and streaming libraries. Inspired by libraries like [`postgres`](https://github.com/porsager/postgres), it gives you just the right abstraction for real-world systems without hiding the power of AMQP.
+**coniglio** (Italian for “rabbit”) is a modern wrapper around RabbitMQ designed to be dead-simple to use, resilient in production, and fully composable with async iterators and streaming libraries. Inspired by libraries like [`postgres`](https://github.com/porsager/postgres), it gives you just the right abstraction for real-world systems without hiding the power of AMQP.
 
 <br/>
 
@@ -65,13 +65,55 @@ setInterval(() => {
 
 ## 📦 Table of contents
 
+1. [Why Coniglio?](#-why-coniglio)
 1. [API](#-api)
 1. [Philosophy](#-philosophy)
 1. [Resilience](#-resilience-by-design)
 1. [Multiple connections](#-multiple-connections)
 1. [TypeScript Integration](#-typescript-integration)
+1. [Usage in Production Systems](#️-usage-in-production-systems)
 1. [Coming Soon](#-coming-soon-planned)
 1. [License](#-license)
+
+## 🐇 Why Coniglio?
+
+If you’ve used [`amqplib`](https://github.com/amqp-node/amqplib), you know it’s the **canonical** RabbitMQ library for Node.js — powerful, stable, and low-level. But it leaves you wiring:
+
+* reconnect logic
+* message decoding
+* ack/nack control
+* error-safe consumption
+* backpressure handling
+* channel separation for pub/sub
+
+**Coniglio wraps `amqplib`** with a modern, minimal layer built for *real apps*.
+You get the same underlying power, but with an API that feels natural and production-ready.
+
+### ✅ A quick comparison
+
+| Feature                        | `amqplib`           | `coniglio` ✅          |
+| ------------------------------ | ------------------- | --------------------- |
+| Promise API                    | ⚠️ Basic (thenable) | ✅ Fully `async/await` |
+| Manual reconnects              | ❌ You handle it     | ✅ Built-in            |
+| Message streaming              | ❌ No                | ✅ `for await...of`    |
+| Built-in JSON decoding         | ❌ Raw Buffer        | ✅ On by default       |
+| Safe manual `ack()` / `nack()` | ✅ Yes               | ✅ Ergonomic handling  |
+| Channel separation (pub/sub)   | ❌ Manual            | ✅ Automatic           |
+| Backpressure-friendly          | ❌ Needs plumbing    | ✅ Native support      |
+| TypeScript types               | ⚠️ Community        | ✅ First-class         |
+
+> 🐇 *Coniglio* is Italian for “rabbit” — simple, fast, and alert.
+
+```ts
+for await (const msg of coniglio.listen('my-queue')) {
+  try {
+    await handle(msg.body)
+    msg.ack()
+  } catch (err) {
+    msg.nack()
+  }
+}
+```
 
 ## 📖 API
 
@@ -322,6 +364,25 @@ for await (const msg of conn.listen('queue.main', { routeKeys: ['user.created'] 
   msg.data.userId // ✅ typed as string
 }
 ```
+
+## 🏗️ Usage in Production Systems
+
+Coniglio is designed to thrive in **real-world** setups with high message throughput and resilience requirements.
+
+✔️ **Backpressure support**
+Using native `for await...of`, you get natural backpressure without buffering hell.
+
+✔️ **Controlled flow**
+Acknowledge or retry only when you're ready — no leaking messages or auto-ack surprises.
+
+✔️ **Crash-safe reconnect**
+If RabbitMQ restarts, `coniglio` handles reconnection, re-initialization, and queue rebinds with zero config.
+
+✔️ **Works in microservices & monoliths**
+Use it in a Fastify server, a background worker, or a Kubernetes job — it's just an async iterator.
+
+✔️ **Easy to observe and test**
+You own the consumer loop. Add metrics, tracing, or mocks wherever you need — no magic, no black boxes.
 
 ---
 
