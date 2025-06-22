@@ -1,6 +1,6 @@
 {
   "name": "coniglio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "A minimal, elegant, and robust async RabbitMQ client for Node.js",
   "main": "index.cjs",
@@ -25,12 +25,33 @@
     "LICENSE",
     "CHANGELOG.md"
   ],
-  "keywords": [],
-  "author": "Michele Triaca <michele.triaca@gmail.com>",
+  "keywords": [
+    "rabbitmq",
+    "amqp",
+    "message-queue",
+    "queue",
+    "pubsub",
+    "messaging",
+    "streaming",
+    "async-iterator",
+    "resilient",
+    "reconnect",
+    "nodejs",
+    "typescript",
+    "broker",
+    "microservices",
+    "mq"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "Michele Triaca",
   "license": "MIT",
+  "repository": "micheletriaca/coniglio",
+  "homepage": "https://github.com/micheletriaca/coniglio",
+  "bugs": "https://github.com/micheletriaca/coniglio/issues",
   "dependencies": {
-    "amqplib": "^0.10.8",
-    "p-map": "^7.0.3"
+    "amqplib": "^0.10.8"
   },
   "devDependencies": {
     "@types/amqplib": "^0.10.7",
