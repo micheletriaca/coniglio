@@ -48,7 +48,7 @@ export interface ConiglioInstance<T extends RoutingKeyMap = Record<string, any>>
 export interface ConfigureOptions {
   exchanges?: {
     name: string
-    type: 'topic' | 'fanout' | 'direct'
+    type: 'topic' | 'fanout' | 'direct' | 'x-delayed-message'
     durable?: boolean
     autoDelete?: boolean
     internal?: boolean

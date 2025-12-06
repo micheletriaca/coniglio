@@ -1,6 +1,6 @@
 {
   "name": "coniglio",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "module",
   "description": "A minimal, elegant, and robust async RabbitMQ client for Node.js",
   "main": "index.cjs",
