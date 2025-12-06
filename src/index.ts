@@ -149,13 +149,13 @@ export default async function coniglio<T extends RoutingKeyMap> (
       channels.consumer!.nack(msg.raw, false, requeue)
     },
 
-    async publish (exchange, routingKey, payload) {
+    async publish (exchange, routingKey, payload, opts = {}) {
       while (true) {
         try {
           const channel = channels.publisher!
           const body = typeof payload === 'string' ? payload : JSON.stringify(payload)
           await new Promise<void>((resolve, reject) => {
-            channel.publish(exchange, routingKey, Buffer.from(body), {}, (err) => {
+            channel.publish(exchange, routingKey, Buffer.from(body), opts, (err) => {
               if (err) reject(err)
               else resolve()
             })

@@ -39,7 +39,8 @@ export interface ConiglioInstance<T extends RoutingKeyMap = Record<string, any>>
   publish<E extends keyof T & string>(
     exchange: string,
     routingKey: E,
-    payload: T[E]
+    payload: T[E],
+    opts?: import('amqplib').Options.Publish
   ): Promise<void>
   configure(opts: ConfigureOptions): Promise<void>
 }

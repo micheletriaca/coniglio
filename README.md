@@ -213,12 +213,12 @@ conn.nack(msg, true) // requeue = true
 
 ---
 
-### `conn.publish(exchange, routingKey, payload)`
+### `conn.publish(exchange, routingKey, payload, opts?)`
 
 Publish a message. Payload is serialized with `JSON.stringify` under the hood.
 
 ```js
-await conn.publish('domain.events', 'user.created', { userId: '123' })
+await conn.publish('domain.events', 'user.created', { userId: '123' }, { priority: 5 })
 ```
 
 * **Retry**: on failure, retries indefinitely with exponential backoff + jitter (1s → 30s).
