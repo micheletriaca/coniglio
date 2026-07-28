@@ -64,7 +64,7 @@
   "homepage": "https://github.com/micheletriaca/coniglio",
   "bugs": "https://github.com/micheletriaca/coniglio/issues",
   "dependencies": {
-    "amqplib": "^0.10.9"
+    "amqplib": "^2.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
