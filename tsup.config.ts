@@ -7,7 +7,7 @@ export default defineConfig({
   outDir: 'lib',
   sourcemap: true,
   cjsInterop: true,
-  target: 'esnext',
+  target: 'node22',
   clean: true,
   outExtension ({ format }) {
     if (format === 'cjs') {

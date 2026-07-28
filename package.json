@@ -1,6 +1,6 @@
 {
   "name": "coniglio",
-  "version": "1.1.1",
+  "version": "2.0.0",
   "type": "module",
   "description": "A minimal, elegant, and robust async RabbitMQ client for Node.js",
   "main": "index.cjs",
@@ -8,20 +8,31 @@
   "types": "lib/index.d.ts",
   "scripts": {
     "build": "tsup",
-    "prepublishOnly": "npm run build",
-    "lint": "eslint ."
+    "check": "npm run lint && npm run typecheck && npm test && npm run build && npm run test:package",
+    "lint": "eslint .",
+    "test": "npm run test:unit",
+    "test:unit": "tsx --test test/unit/**/*.test.ts",
+    "test:integration": "tsx --test test/integration/**/*.test.ts",
+    "test:package": "node --test test/package/**/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run check"
   },
   "exports": {
     ".": {
-      "types": "./lib/index.d.ts",
-      "import": "./lib/index.esm.js",
-      "require": "./index.cjs"
+      "import": {
+        "types": "./lib/index.d.ts",
+        "default": "./lib/index.esm.js"
+      },
+      "require": {
+        "types": "./lib/index.d.cts",
+        "default": "./index.cjs"
+      }
     }
   },
   "files": [
     "lib/",
     "index.cjs",
-    "types/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
@@ -46,21 +57,29 @@
   "engines": {
     "node": ">=22.0.0"
   },
+  "sideEffects": false,
   "author": "Michele Triaca",
   "license": "MIT",
   "repository": "micheletriaca/coniglio",
   "homepage": "https://github.com/micheletriaca/coniglio",
   "bugs": "https://github.com/micheletriaca/coniglio/issues",
   "dependencies": {
-    "amqplib": "^0.10.8"
+    "amqplib": "^0.10.9"
   },
   "devDependencies": {
-    "@types/amqplib": "^0.10.7",
-    "@types/node": "^24.0.3",
-    "eslint": "^9.29.0",
-    "neostandard": "^0.12.1",
-    "tsup": "^8.5.0",
-    "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "@eslint/js": "^10.0.1",
+    "@types/amqplib": "^0.10.8",
+    "@types/node": "^24.13.3",
+    "eslint": "^10.8.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.65.0"
+  },
+  "overrides": {
+    "tsup": {
+      "esbuild": "^0.28.1",
+      "sucrase": "^3.35.1"
+    }
   }
 }

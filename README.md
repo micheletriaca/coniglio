@@ -1,400 +1,375 @@
 # 🐇 coniglio
 
-> A minimal, elegant, and robust async RabbitMQ client for Node.js
+> A small, typed and resilient RabbitMQ client for Node.js.
 
-<img align="left" height="180" alt="Fastest full PostgreSQL nodejs client" src="https://raw.githubusercontent.com/micheletriaca/coniglio/refs/heads/master/logo.png">
+Coniglio wraps [`amqplib`](https://github.com/amqp-node/amqplib) with:
 
-<br/>
+- async-iterator consumers with bounded prefetch;
+- publisher confirms and configurable retry;
+- automatic connection, channel, subscription and topology recovery;
+- explicit `ack()` / `nack()` ownership;
+- graceful shutdown and `AbortSignal` support;
+- consistent JSON encoding with raw `Buffer` support;
+- ESM, CommonJS and first-class TypeScript types.
 
-**coniglio** (Italian for “rabbit”) is a modern wrapper around RabbitMQ designed to be dead-simple to use, resilient in production, and fully composable with async iterators and streaming libraries. Inspired by libraries like [`postgres`](https://github.com/porsager/postgres), it gives you just the right abstraction for real-world systems without hiding the power of AMQP.
-
-<br/>
-
----
-
-## 🚀 Features
-
-* ✅ **`for await…of` streaming API** — process messages naturally with backpressure
-* ✅ **Auto reconnect** — connection and channel recovery handled transparently with exponential backoff + jitter
-* ✅ **JSON decoding by default** — or opt-out for raw Buffer access
-* ✅ **Manual `ack()` / `nack()`** — total control over message flow
-* ✅ **Composable** — works beautifully with `p-map`, `exstream.js`, `highland`, standard Node streams and more
-* ✅ **Multiple isolated connections** — supports multi-tenant, multi-env, and dynamic routing
-* ✅ **TypeScript support** — full type inference over event data
-* ✅ **Zero dependencies (core version)** — just `amqplib` under the hood
-
----
-
-## 📦 Installation
+## Installation
 
 ```bash
 npm install coniglio
 ```
 
-## ✨ Usage
+Coniglio supports Node.js 22 and newer.
 
-```js
+## Quick start
+
+```ts
 import coniglio from 'coniglio'
 
-const conn = await coniglio('amqp://localhost')
-
-// Configure queues and exchanges
-// (optional, useful for bootstrapping or tests)
-await conn.configure({
-  queues: [
-    { name: 'jobs.email', durable: true }
-  ],
-  exchanges: [
-    { name: 'domain.events', type: 'topic', durable: true }
-  ]
-})
-
-// Consume messages from a queue
-for await (const msg of conn.listen('jobs.email')) {
-  await sendEmail(msg.data)
-  conn.ack(msg)
+type Events = {
+  'user.created': { userId: string }
+  'invoice.sent': { invoiceId: string; total: number }
 }
 
-// Publish messages to an exchange
-setInterval(() => {
-  conn.publish('domain.events', 'jobs.email', { message: 'hello world' })
-}, 200)
-```
+const rabbit = await coniglio<Events>('amqp://localhost')
 
----
-
-## 📦 Table of contents
-
-1. [Why Coniglio?](#-why-coniglio)
-1. [API](#-api)
-1. [Philosophy](#-philosophy)
-1. [Resilience](#-resilience-by-design)
-1. [Multiple connections](#-multiple-connections)
-1. [TypeScript Integration](#-typescript-integration)
-1. [Usage in Production Systems](#️-usage-in-production-systems)
-1. [Coming Soon](#-coming-soon-planned)
-1. [License](#-license)
-
-## 🐇 Why Coniglio?
-
-If you’ve used [`amqplib`](https://github.com/amqp-node/amqplib), you know it’s the **canonical** RabbitMQ library for Node.js — powerful, stable, and low-level. But it leaves you wiring:
-
-* reconnect logic
-* message decoding
-* ack/nack control
-* error-safe consumption
-* backpressure handling
-* channel separation for pub/sub
-
-**Coniglio wraps `amqplib`** with a modern, minimal layer built for *real apps*.
-You get the same underlying power, but with an API that feels natural and production-ready.
-
-### ✅ A quick comparison
-
-| Feature                        | `amqplib`           | `coniglio` ✅          |
-| ------------------------------ | ------------------- | --------------------- |
-| Promise API                    | ⚠️ Basic (thenable) | ✅ Fully `async/await` |
-| Manual reconnects              | ❌ You handle it     | ✅ Built-in            |
-| Message streaming              | ❌ No                | ✅ `for await...of`    |
-| Built-in JSON decoding         | ❌ Raw Buffer        | ✅ On by default       |
-| Safe manual `ack()` / `nack()` | ✅ Yes               | ✅ Ergonomic handling  |
-| Channel separation (pub/sub)   | ❌ Manual            | ✅ Automatic           |
-| Backpressure-friendly          | ❌ Needs plumbing    | ✅ Native support      |
-| TypeScript types               | ⚠️ Community        | ✅ First-class         |
-
-> 🐇 *Coniglio* is Italian for “rabbit” — simple, fast, and alert.
-
-```ts
-for await (const msg of coniglio.listen('my-queue')) {
-  try {
-    await handle(msg.body)
-    msg.ack()
-  } catch (err) {
-    msg.nack()
-  }
-}
-```
-
-## 📖 API
-
-### `const conn = await coniglio(url, opts?)`
-
-Creates a new connection instance.
-
-```ts
-const conn = await coniglio('amqp://localhost', {
-  logger: console, // optional custom logger
-  json: true,      // default: true (parse JSON messages)
-  prefetch: 10,    // default: 10 (number of unacknowledged messages)
-})
-```
-
-If you want to use a custom logger, it should implement the Logger interface:
-
-```ts
-export interface Logger {
-  debug(...args: any[]): void
-  info(...args: any[]): void
-  warn(...args: any[]): void
-  error(...args: any[]): void
-}
-```
-
-Example with `pino`:
-
-```js
-import pino from 'pino'
-const log = pino({ level: 'debug' })
-const conn = await coniglio('amqp://localhost', { logger: log })
-```
-
----
-
-### `conn.listen(queue, opts?)`
-
-Returns an async iterator of messages consumed from a queue.
-
-```ts
-interface ListenOptions {
-  json?: boolean           // default: true (parse JSON)
-  prefetch?: number        // default: 10
-  routingKeys?: (keyof T)[] // optional filter, TypeScript-safe
-}
-```
-
-Each yielded `msg: Message<T>` has:
-
-```ts
-interface Message<T> {
-  raw: amqp.ConsumeMessage    // original AMQP message
-  content: Buffer             // raw message body
-  data?: T                    // parsed JSON if json = true
-  contentIsJson: boolean      // true if JSON parsed successfully
-  routingKey: string          // the routing key
-}
-```
-
-#### JSON-enabled example
-
-```js
-for await (const msg of conn.listen('my-queue', { prefetch: 100 })) {
-  // msg.data is parsed JSON
-  if (msg.contentIsJson) {
-    processData(msg.data)
-  } else {
-    // handle parsing error
-    console.warn('Failed to parse JSON:', msg.content.toString())
-  }
-  conn.ack(msg)
-}
-```
-
-#### JSON-opt-out example
-
-```js
-for await (const msg of conn.listen('my-queue', { json: false })) {
-  // msg.data === undefined
-  // use msg.content (Buffer) directly
-  processRaw(msg.content)
-  conn.ack(msg)
-}
-```
-
----
-
-### `conn.ack(msg)` / `conn.nack(msg, requeue = false)`
-
-Manually acknowledge or reject a message.
-
-```js
-conn.ack(msg)
-conn.nack(msg, true) // requeue = true
-```
-
----
-
-### `conn.publish(exchange, routingKey, payload, opts?)`
-
-Publish a message. Payload is serialized with `JSON.stringify` under the hood.
-
-```js
-await conn.publish('domain.events', 'user.created', { userId: '123' }, { priority: 5 })
-```
-
-* **Retry**: on failure, retries indefinitely with exponential backoff + jitter (1s → 30s).
-* **Confirm channel**: ensures broker receipt before resolving.
-
----
-
-### `conn.configure({ queues, exchanges })`
-
-Declare queues and exchanges explicitly. Useful for bootstrapping, tests, and dynamic setups.
-
-```js
-await conn.configure({
+await rabbit.configure({
   exchanges: [
     { name: 'domain.events', type: 'topic', durable: true }
   ],
   queues: [
     {
-      name: 'jobs.email',
+      name: 'users',
       durable: true,
-      bindTo: [{ exchange: 'domain.events', routingKey: 'jobs.email' }]
+      bindTo: [
+        { exchange: 'domain.events', routingKey: 'user.created' }
+      ]
+    }
+  ]
+})
+
+await rabbit.publish(
+  'domain.events',
+  'user.created',
+  { userId: '42' }
+)
+
+for await (const message of rabbit.listen('users', {
+  routingKeys: ['user.created']
+})) {
+  try {
+    if (message.contentIsJson) {
+      await createUser(message.data.userId)
+    }
+    rabbit.ack(message)
+  } catch (error) {
+    rabbit.nack(message, true)
+  }
+}
+```
+
+Always close the client during application shutdown:
+
+```ts
+await rabbit.close()
+```
+
+## Creating a client
+
+```ts
+const rabbit = await coniglio('amqp://localhost', {
+  logger: console,
+  onEvent: event => {
+    metrics.increment(`coniglio.${event.type}`)
+  },
+  json: true,
+  prefetch: 10,
+  reconnect: {
+    initialDelayMs: 1000,
+    maxDelayMs: 30000,
+    maxAttempts: Infinity
+  },
+  publish: {
+    confirmTimeoutMs: 30000,
+    retry: {
+      initialDelayMs: 1000,
+      maxDelayMs: 30000,
+      maxAttempts: Infinity
+    }
+  },
+  signal: applicationAbortController.signal,
+  socketOptions: {
+    timeout: 10000
+  }
+})
+```
+
+All options except the URL are optional.
+
+### Logging
+
+A logger may implement any subset of these methods:
+
+```ts
+interface Logger {
+  debug?(...args: unknown[]): void
+  info?(...args: unknown[]): void
+  warn?(...args: unknown[]): void
+  error?(...args: unknown[]): void
+}
+```
+
+Pino and `console` can be passed directly.
+
+## Consuming
+
+`listen()` creates a dedicated RabbitMQ channel and returns an async generator:
+
+```ts
+for await (const message of rabbit.listen('users', {
+  prefetch: 20,
+  json: true,
+  signal: workerAbortController.signal
+})) {
+  if (message.contentIsJson) {
+    console.log(message.data)
+  } else {
+    console.warn('Non-JSON payload:', message.content)
+  }
+
+  rabbit.ack(message)
+}
+```
+
+Breaking out of the loop, calling `iterator.return()`, aborting its signal, or
+closing the client cancels the RabbitMQ consumer and closes its channel.
+
+### Routing-key assertions
+
+`routingKeys` narrows the TypeScript result and asserts the queue contract:
+
+```ts
+for await (const message of rabbit.listen('users', {
+  routingKeys: ['user.created']
+})) {
+  if (message.contentIsJson) {
+    message.data.userId
+  }
+}
+```
+
+RabbitMQ routing must still be configured through exchanges and queue bindings.
+If the queue delivers a key outside `routingKeys`, Coniglio requeues the message,
+stops that iterator and throws `UnexpectedRoutingKeyError`. It never silently
+discards an unexpected message.
+
+### Acknowledgements
+
+```ts
+rabbit.ack(message)
+rabbit.nack(message)
+rabbit.nack(message, true) // requeue
+```
+
+Acknowledgements are sent through the exact channel that delivered the message.
+If that channel was lost during processing, `ack()` and `nack()` throw
+`ConiglioMessageStateError`; RabbitMQ requeues the unacknowledged delivery when
+the old channel closes.
+
+## Publishing
+
+Non-Buffer values are always encoded using `JSON.stringify()`:
+
+```ts
+await rabbit.publish('domain.events', 'user.created', {
+  userId: '42'
+})
+
+// The wire body is the valid JSON string: "hello"
+await rabbit.publish('', 'text', 'hello')
+```
+
+`Buffer` payloads are sent unchanged with an
+`application/octet-stream` content type:
+
+```ts
+await rabbit.publish('', 'binary', Buffer.from([1, 2, 3]))
+```
+
+Standard `amqplib` publish options and Coniglio controls share the final
+argument:
+
+```ts
+await rabbit.publish(
+  'domain.events',
+  'invoice.sent',
+  { invoiceId: 'inv-1', total: 120 },
+  {
+    persistent: true,
+    priority: 5,
+    confirmTimeoutMs: 5000,
+    retry: {
+      initialDelayMs: 100,
+      maxDelayMs: 5000,
+      maxAttempts: 8
+    },
+    signal: requestAbortController.signal
+  }
+)
+```
+
+Use `retry: false` for one attempt.
+
+Publishing provides **at-least-once**, not exactly-once, semantics. If RabbitMQ
+accepts a message but its confirm is lost with the connection, a retry can
+publish a duplicate. Consumers should be idempotent when duplicates matter.
+
+Serialization errors are returned immediately and are never retried.
+
+## Topology
+
+```ts
+await rabbit.configure({
+  exchanges: [
+    {
+      name: 'domain.events',
+      type: 'topic',
+      durable: true
+    },
+    {
+      name: 'delayed.events',
+      type: 'x-delayed-message',
+      durable: true,
+      arguments: {
+        'x-delayed-type': 'topic'
+      }
+    }
+  ],
+  queues: [
+    {
+      name: 'invoices',
+      durable: true,
+      deadLetterExchange: 'dead-letters',
+      messageTtl: 60000,
+      maxLength: 10000,
+      bindTo: [
+        {
+          exchange: 'domain.events',
+          routingKey: 'invoice.*'
+        }
+      ]
     }
   ]
 })
 ```
 
+Successful calls to `configure()` are remembered. After reconnecting, Coniglio
+redeclares exchanges, queues and bindings before recreating active consumers.
+The `x-delayed-message` exchange type requires the RabbitMQ delayed-message
+plugin on the broker.
+
+## Recovery model
+
+Coniglio uses exponential backoff with jitter.
+
+- A connection or publisher-channel close rebuilds the full transport.
+- Each listener has an isolated consumer channel.
+- A consumer-channel close rebuilds only that subscription.
+- Stored topology is applied before subscriptions restart.
+- Buffered deliveries from a closed channel are left for RabbitMQ to requeue.
+- Pending listeners survive reconnect unless their retry budget is exhausted.
+- `close()` and abort signals stop sleeps, retries and consumers.
+
+Set finite `maxAttempts` values when the caller must regain control after a
+bounded retry window. The defaults remain infinite for backward compatibility.
+
+## Lifecycle and observability
+
+The current lifecycle is available without parsing logs:
+
 ```ts
-interface ConfigureOptions {
-  exchanges?: {
-    name: string
-    type: 'topic' | 'fanout' | 'direct' | 'headers'
-    durable?: boolean
-    autoDelete?: boolean
-    internal?: boolean
-    arguments?: Record<string, any>
-  }[]
-  queues?: {
-    name: string
-    durable?: boolean
-    exclusive?: boolean
-    autoDelete?: boolean
-    deadLetterExchange?: string
-    messageTtl?: number
-    maxLength?: number
-    arguments?: Record<string, any>
-    bindTo?: {
-      exchange: string
-      routingKey: string
-      arguments?: Record<string, any>
-    }[]
-  }[]
-}
+rabbit.state
+// 'idle' | 'connecting' | 'ready' | 'reconnecting'
+// | 'disconnected' | 'closing' | 'closed'
 ```
 
----
-
-### `await conn.close()`
-
-Gracefully close all channels and the underlying connection. Use this during application shutdown.
-
----
-
-## 🧠 Philosophy
-
-coniglio doesn’t manage your concurrency. It just delivers messages as an async generator. Use your favorite tool:
+Use `onEvent` for metrics and tracing:
 
 ```ts
-import pMap from 'p-map'
-
-await pMap(
-  conn.listen('jobs.video'),
-  async msg => {
-    await transcode(msg.data)
-    conn.ack(msg)
-  },
-  { concurrency: 5 }
-)
-```
-
-Or go reactive:
-
-```ts
-import { pipeline } from 'exstream'
-
-await pipeline(
-  conn.listen('metrics'),
-  s => s.map(msg => parse(msg.data)),
-  s => s.forEach(logMetric)
-)
-```
-
----
-
-## 💪 Resilience by design
-
-* Detects and recovers from connection or channel failures automatically
-* Messages aren't lost or stuck unacknowledged
-* Keeps the developer in control — no magic retries or swallowing errors
-
----
-
-## ✅ Multiple connections
-
-```ts
-const prod = coniglio('amqp://prod-host')
-const qa = coniglio('amqp://qa-host')
-
-await prod.publish('events', 'prod.ready', { ok: true })
-await qa.publish('events', 'qa.ready', { ok: true })
-```
-
----
-
-## 🧩 TypeScript Integration
-
-If you are using TypeScript and want full type safety over your messages, you can pass a generic type map to `coniglio()`:
-
-```ts
-type RouteKeyMap = {
-  'user.created': { userId: string }
-  'invoice.sent': { invoiceId: string; total: number }
-}
-
-const r = await coniglio<RouteKeyMap>('amqp://localhost')
-
-// Consume all events from a queue
-for await (const msg of conn.listen('queue.main')) {
-  switch (msg.event) {
-    case 'user.created': {
-      msg.data.userId // ✅ typed as string
-      break
-    }
-    case 'invoice.sent': {
-      msg.data.invoiceId // ✅ typed as string
-      msg.data.total // ✅ typed as number
-      break
+const rabbit = await coniglio('amqp://localhost', {
+  onEvent (event) {
+    switch (event.type) {
+      case 'connection-retry':
+        metrics.increment('rabbitmq.connection.retry')
+        metrics.observe('rabbitmq.connection.backoff', event.delayMs)
+        break
+      case 'consumer-ready':
+        metrics.increment('rabbitmq.consumer.ready', {
+          queue: event.queue
+        })
+        break
+      case 'publish-confirmed':
+        metrics.increment('rabbitmq.publish.confirmed', {
+          routingKey: event.routingKey
+        })
+        break
     }
   }
-}
-
-// Or filter statically by known events (with narrow typing)
-for await (const msg of conn.listen('queue.main', { routeKeys: ['user.created'] })) {
-  msg.data.userId // ✅ typed as string
-}
+})
 ```
 
-## 🏗️ Usage in Production Systems
+Event-hook failures are isolated and never affect delivery.
 
-Coniglio is designed to thrive in **real-world** setups with high message throughput and resilience requirements.
+## Multiple connections
 
-✔️ **Backpressure support**
-Using native `for await...of`, you get natural backpressure without buffering hell.
+Each call creates an isolated client:
 
-✔️ **Controlled flow**
-Acknowledge or retry only when you're ready — no leaking messages or auto-ack surprises.
+```ts
+const production = await coniglio('amqp://production')
+const qa = await coniglio('amqp://qa')
 
-✔️ **Crash-safe reconnect**
-If RabbitMQ restarts, `coniglio` handles reconnection, re-initialization, and queue rebinds with zero config.
+await production.publish('events', 'ready', { environment: 'production' })
+await qa.publish('events', 'ready', { environment: 'qa' })
 
-✔️ **Works in microservices & monoliths**
-Use it in a Fastify server, a background worker, or a Kubernetes job — it's just an async iterator.
+await Promise.all([
+  production.close(),
+  qa.close()
+])
+```
 
-✔️ **Easy to observe and test**
-You own the consumer loop. Add metrics, tracing, or mocks wherever you need — no magic, no black boxes.
+## Public types and errors
 
----
+All public types are exported from the package root:
 
-## 🪄 Coming soon (planned)
+```ts
+import coniglio, {
+  ConiglioClosedError,
+  ConiglioMessageStateError,
+  ConiglioPublishError,
+  UnexpectedRoutingKeyError,
+  type ConfigureOptions,
+  type ConiglioInstance,
+  type ConiglioEvent,
+  type ConiglioLifecycleState,
+  type ConiglioOptions,
+  type Message,
+  type PublishOptions
+} from 'coniglio'
+```
 
-* [ ] test suite with real RabbitMQ integration
-* [ ] `conn.stream()` for full `ReadableStream` interop (with `AbortSignal`)
-* [ ] Built-in metrics and logging hooks
-* [ ] Retry helpers (e.g. DLQ support, customizable backoff)
+Both ESM imports and CommonJS `require('coniglio')` are supported.
 
----
+## Development
 
-## 📘 License
+```bash
+npm ci
+npm run check
+npm run test:integration
+npm pack --dry-run
+```
 
-MIT — as simple and open as the API itself.
+The integration suite expects RabbitMQ at `amqp://localhost`. CI runs the suite
+against a RabbitMQ service and checks Node.js 22, 24 and 26.
+
+## License
+
+MIT

@@ -1,31 +1,37 @@
-# Contributing to Coniglio 🐇
+# Contributing to Coniglio
 
-Thanks for your interest! Contributions are welcome and appreciated.
-This is a minimal guide to keep things smooth for everyone.
+Contributions are welcome. Prefer small, focused pull requests with tests that
+describe the intended behavior.
 
-## 🧰 Setup
+## Setup
 
 ```bash
-npm install
-npm build
+npm ci
+npm run check
 ```
 
-## ✅ Guidelines
+`npm run check` runs lint, strict TypeScript checking, unit tests, the package
+build, and ESM/CommonJS public-API tests.
 
-* Prefer small, focused pull requests.
-* Run `npm run lint`.
-* Use `async/await` — no callbacks or `.then()` chains.
-* Write clean, readable code. We love minimalism.
+## RabbitMQ integration tests
 
-## 💬 Issues
+Start RabbitMQ locally on its default port, then run:
 
-Bug reports and feature requests are welcome.
-Please include:
+```bash
+npm run test:integration
+```
 
-* What you expected to happen
-* What happened instead
-* Steps to reproduce (if applicable)
+Integration tests create uniquely named temporary exchanges and queues and
+clean them up after execution.
 
----
+## Guidelines
 
-Thank you! ✨
+- Add a regression test for bug fixes.
+- Test failure and reconnect paths, not only the happy path.
+- Keep public types, runtime behavior and README examples aligned.
+- Preserve at-least-once delivery semantics.
+- Run `npm pack --dry-run` when changing exports or package contents.
+- Do not silently discard deliveries.
+
+Bug reports should include expected behavior, actual behavior, reproduction
+steps, Node.js version, RabbitMQ version and relevant logs.

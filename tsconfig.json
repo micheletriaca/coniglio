@@ -6,13 +6,19 @@
     "resolveJsonModule": true,
     "allowJs": false,
     "checkJs": false,
-    "strictNullChecks": true,
-    "skipLibCheck": false,
-    "baseUrl": ".",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
     "types": ["node"]
   },
+  "include": [
+    "src",
+    "test",
+    "tsup.config.ts"
+  ],
   "exclude": [
     "node_modules",
-    "lib"
+    "lib",
+    "test/fixtures"
   ]
 }

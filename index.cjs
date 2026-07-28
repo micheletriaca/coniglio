@@ -1,3 +1,5 @@
 'use strict'
 const pkg = require('./lib/index.cjs')
-module.exports = pkg.default ?? pkg
+const coniglio = pkg.default ?? pkg
+Object.assign(coniglio, pkg)
+module.exports = coniglio
