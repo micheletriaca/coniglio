@@ -1,6 +1,6 @@
 {
   "name": "coniglio",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "A minimal, elegant, and robust async RabbitMQ client for Node.js",
   "keywords": [
     "amqp",

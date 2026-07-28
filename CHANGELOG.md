@@ -2,13 +2,27 @@
 
 All notable changes to this project are documented here.
 
+## 2.1.0
+
+### Changed
+
+- Upgraded to amqplib 2 and its bundled TypeScript declarations.
+- Upgraded the compiler to TypeScript 7.
+- Replaced ESLint with oxlint and oxfmt.
+- Replaced tsup with tsdown for TypeScript 7-compatible ESM, CommonJS and
+  declaration builds.
+- Consumer-channel failures now rebuild the complete transport, removing the
+  independent per-consumer recovery supervisor.
+- Updated GitHub Actions to v7 and eliminated duplicate CI runs for pull
+  request branches.
+
 ## 2.0.0
 
 ### Added
 
 - Graceful, idempotent `close()` and `AbortSignal` support.
 - Dedicated consumer channels with real consumer cancellation.
-- Connection and channel recovery.
+- Connection, publisher-channel and consumer-channel recovery.
 - Stored topology replay before subscription recovery.
 - Configurable reconnect and publish retry policies.
 - Publisher-confirm timeout support.
@@ -27,10 +41,6 @@ All notable changes to this project are documented here.
 - The TypeScript configuration now uses strict mode.
 - ESM and CommonJS exports now expose the same runtime API.
 - The development dependency tree has been updated and reduced.
-- The runtime now uses amqplib 2 with its bundled TypeScript declarations.
-- The toolchain now uses TypeScript 7, oxlint, oxfmt and tsdown.
-- A consumer-channel failure now rebuilds the complete transport, avoiding a
-  second per-consumer recovery supervisor.
 
 ### Fixed
 
