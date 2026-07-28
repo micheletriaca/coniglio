@@ -5,7 +5,7 @@ import type {
   ConfirmChannel,
   ConsumeMessage,
   Options,
-  Replies
+  Replies,
 } from 'amqplib'
 import type { ConnectionFactory } from '../../src/client'
 
@@ -29,7 +29,7 @@ export interface AssertedQueue {
 const consumeMessage = (
   routingKey: string,
   payload: Buffer,
-  deliveryTag: number
+  deliveryTag: number,
 ): ConsumeMessage => ({
   content: payload,
   fields: {
@@ -37,7 +37,7 @@ const consumeMessage = (
     deliveryTag,
     redelivered: false,
     exchange: 'events',
-    routingKey
+    routingKey,
   },
   properties: {
     contentType: undefined,
@@ -53,8 +53,8 @@ const consumeMessage = (
     type: undefined,
     userId: undefined,
     appId: undefined,
-    clusterId: undefined
-  }
+    clusterId: undefined,
+  },
 })
 
 export class FakeChannel extends EventEmitter {
@@ -68,62 +68,54 @@ export class FakeChannel extends EventEmitter {
   closeCalls = 0
   closed = false
 
-  constructor (
+  constructor(
     readonly broker: FakeBroker,
     readonly connectionId: number,
-    readonly kind: 'consumer' | 'publisher'
+    readonly kind: 'consumer' | 'publisher',
   ) {
     super()
     this.operations = broker.operations
   }
 
-  async prefetch (count: number): Promise<Replies.Empty> {
+  async prefetch(count: number): Promise<Replies.Empty> {
     this.operations.push(`connection:${this.connectionId}:prefetch:${count}`)
     return {}
   }
 
-  async consume (
+  async consume(
     queue: string,
-    callback: (message: ConsumeMessage | null) => void
+    callback: (message: ConsumeMessage | null) => void,
   ): Promise<Replies.Consume> {
     this.queueName = queue
     this.delivery = callback
     this.consumerTag = `consumer-${this.broker.nextConsumerTag++}`
-    this.operations.push(
-      `connection:${this.connectionId}:consume:${queue}`
-    )
+    this.operations.push(`connection:${this.connectionId}:consume:${queue}`)
     return { consumerTag: this.consumerTag }
   }
 
-  async cancel (consumerTag: string): Promise<Replies.Empty> {
+  async cancel(consumerTag: string): Promise<Replies.Empty> {
     this.cancelCalls++
-    this.operations.push(
-      `connection:${this.connectionId}:cancel:${consumerTag}`
-    )
+    this.operations.push(`connection:${this.connectionId}:cancel:${consumerTag}`)
     this.delivery = undefined
     return {}
   }
 
-  ack (message: ConsumeMessage): void {
+  ack(message: ConsumeMessage): void {
     if (this.closed) throw new Error('Channel is closed')
     this.acked.push(message)
   }
 
-  nack (
-    message: ConsumeMessage,
-    _allUpTo = false,
-    requeue = true
-  ): void {
+  nack(message: ConsumeMessage, _allUpTo = false, requeue = true): void {
     if (this.closed) throw new Error('Channel is closed')
     this.nacked.push({ message, requeue })
   }
 
-  publish (
+  publish(
     exchange: string,
     routingKey: string,
     body: Buffer,
     options: Options.Publish,
-    callback: (error: unknown, ok?: Replies.Empty) => void
+    callback: (error: unknown, ok?: Replies.Empty) => void,
   ): boolean {
     if (this.closed) throw new Error('Channel is closed')
 
@@ -131,77 +123,50 @@ export class FakeChannel extends EventEmitter {
       exchange,
       routingKey,
       body: Buffer.from(body),
-      options
+      options,
     })
 
     if (this.broker.withholdConfirms) return true
 
-    const error = this.broker.confirmFailuresRemaining > 0
-      ? new Error('Publisher confirm rejected')
-      : undefined
+    const error =
+      this.broker.confirmFailuresRemaining > 0 ? new Error('Publisher confirm rejected') : undefined
     if (error) this.broker.confirmFailuresRemaining--
 
     queueMicrotask(() => callback(error ?? null, error ? undefined : {}))
     return true
   }
 
-  async assertExchange (
-    name: string,
-    type: string
-  ): Promise<Replies.AssertExchange> {
-    this.operations.push(
-      `connection:${this.connectionId}:assertExchange:${name}:${type}`
-    )
+  async assertExchange(name: string, type: string): Promise<Replies.AssertExchange> {
+    this.operations.push(`connection:${this.connectionId}:assertExchange:${name}:${type}`)
     return { exchange: name }
   }
 
-  async assertQueue (
-    name: string,
-    options?: Options.AssertQueue
-  ): Promise<Replies.AssertQueue> {
+  async assertQueue(name: string, options?: Options.AssertQueue): Promise<Replies.AssertQueue> {
     this.broker.assertedQueues.push({ name, options })
-    this.operations.push(
-      `connection:${this.connectionId}:assertQueue:${name}`
-    )
+    this.operations.push(`connection:${this.connectionId}:assertQueue:${name}`)
     return {
       queue: name,
       messageCount: 0,
-      consumerCount: 0
+      consumerCount: 0,
     }
   }
 
-  async bindQueue (
-    queue: string,
-    exchange: string,
-    routingKey: string
-  ): Promise<Replies.Empty> {
-    this.operations.push(
-      `connection:${this.connectionId}:bind:${queue}:${exchange}:${routingKey}`
-    )
+  async bindQueue(queue: string, exchange: string, routingKey: string): Promise<Replies.Empty> {
+    this.operations.push(`connection:${this.connectionId}:bind:${queue}:${exchange}:${routingKey}`)
     return {}
   }
 
-  async close (): Promise<void> {
+  async close(): Promise<void> {
     this.closeCalls++
     if (this.closed) return
     this.closed = true
     this.emit('close')
   }
 
-  deliver (
-    routingKey: string,
-    payload: unknown,
-    raw = false
-  ): ConsumeMessage {
+  deliver(routingKey: string, payload: unknown, raw = false): ConsumeMessage {
     if (!this.delivery) throw new Error('Channel has no active consumer')
-    const body = raw
-      ? Buffer.from(String(payload))
-      : Buffer.from(JSON.stringify(payload))
-    const message = consumeMessage(
-      routingKey,
-      body,
-      this.broker.nextDeliveryTag++
-    )
+    const body = raw ? Buffer.from(String(payload)) : Buffer.from(JSON.stringify(payload))
+    const message = consumeMessage(routingKey, body, this.broker.nextDeliveryTag++)
     this.delivery(message)
     return message
   }
@@ -213,38 +178,34 @@ export class FakeConnection extends EventEmitter {
   closeCalls = 0
   closed = false
 
-  constructor (
+  constructor(
     readonly broker: FakeBroker,
-    readonly id: number
+    readonly id: number,
   ) {
     super()
     this.publisher = new FakeChannel(broker, id, 'publisher')
   }
 
-  async createConfirmChannel (): Promise<ConfirmChannel> {
-    this.broker.operations.push(
-      `connection:${this.id}:createPublisher`
-    )
+  async createConfirmChannel(): Promise<ConfirmChannel> {
+    this.broker.operations.push(`connection:${this.id}:createPublisher`)
     return this.publisher as unknown as ConfirmChannel
   }
 
-  async createChannel (): Promise<Channel> {
+  async createChannel(): Promise<Channel> {
     const channel = new FakeChannel(this.broker, this.id, 'consumer')
     this.consumers.push(channel)
-    this.broker.operations.push(
-      `connection:${this.id}:createConsumer`
-    )
+    this.broker.operations.push(`connection:${this.id}:createConsumer`)
     return channel as unknown as Channel
   }
 
-  async close (): Promise<void> {
+  async close(): Promise<void> {
     this.closeCalls++
     if (this.closed) return
     this.closed = true
     this.emit('close')
   }
 
-  breakConnection (): void {
+  breakConnection(): void {
     if (this.closed) return
     this.closed = true
     this.emit('close')
@@ -268,37 +229,31 @@ export class FakeBroker {
       throw new Error('Connection refused')
     }
 
-    const connection = new FakeConnection(
-      this,
-      this.connections.length + 1
-    )
+    const connection = new FakeConnection(this, this.connections.length + 1)
     this.connections.push(connection)
     this.operations.push(`connection:${connection.id}:connect`)
     return connection as unknown as ChannelModel
   }
 
-  get latestConnection (): FakeConnection {
+  get latestConnection(): FakeConnection {
     const connection = this.connections.at(-1)
     if (!connection) throw new Error('No fake connection exists')
     return connection
   }
 
-  get latestConsumer (): FakeChannel {
+  get latestConsumer(): FakeChannel {
     const consumer = this.latestConnection.consumers.at(-1)
     if (!consumer) throw new Error('No fake consumer exists')
     return consumer
   }
 }
 
-export const waitFor = async (
-  predicate: () => boolean,
-  timeoutMs = 1000
-): Promise<void> => {
+export const waitFor = async (predicate: () => boolean, timeoutMs = 1000): Promise<void> => {
   const deadline = Date.now() + timeoutMs
   while (!predicate()) {
     if (Date.now() >= deadline) {
       throw new Error('Timed out waiting for condition')
     }
-    await new Promise(resolve => setTimeout(resolve, 1))
+    await new Promise((resolve) => setTimeout(resolve, 1))
   }
 }

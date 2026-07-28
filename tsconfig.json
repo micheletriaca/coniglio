@@ -11,14 +11,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": [
-    "src",
-    "test",
-    "tsup.config.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "lib",
-    "test/fixtures"
-  ]
+  "include": ["src", "test", "tsdown.config.ts", "oxlint.config.ts", "oxfmt.config.ts"],
+  "exclude": ["node_modules", "lib", "test/fixtures"]
 }

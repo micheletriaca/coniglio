@@ -8,19 +8,24 @@ export interface NormalizedRetryOptions {
 
 export const normalizeRetryOptions = (
   options: RetryOptions | undefined,
-  defaults: NormalizedRetryOptions
+  defaults: NormalizedRetryOptions,
 ): NormalizedRetryOptions => {
   const normalized = {
     initialDelayMs: options?.initialDelayMs ?? defaults.initialDelayMs,
     maxDelayMs: options?.maxDelayMs ?? defaults.maxDelayMs,
-    maxAttempts: options?.maxAttempts ?? defaults.maxAttempts
+    maxAttempts: options?.maxAttempts ?? defaults.maxAttempts,
   }
 
   if (!Number.isFinite(normalized.initialDelayMs) || normalized.initialDelayMs < 0) {
     throw new RangeError('initialDelayMs must be a finite number greater than or equal to 0')
   }
-  if (!Number.isFinite(normalized.maxDelayMs) || normalized.maxDelayMs < normalized.initialDelayMs) {
-    throw new RangeError('maxDelayMs must be a finite number greater than or equal to initialDelayMs')
+  if (
+    !Number.isFinite(normalized.maxDelayMs) ||
+    normalized.maxDelayMs < normalized.initialDelayMs
+  ) {
+    throw new RangeError(
+      'maxDelayMs must be a finite number greater than or equal to initialDelayMs',
+    )
   }
   if (
     normalized.maxAttempts !== Infinity &&
@@ -32,19 +37,13 @@ export const normalizeRetryOptions = (
   return normalized
 }
 
-export const backoffDelay = (
-  failedAttempt: number,
-  options: NormalizedRetryOptions
-): number => {
+export const backoffDelay = (failedAttempt: number, options: NormalizedRetryOptions): number => {
   const exponential = Math.min(
-    options.initialDelayMs * (2 ** Math.max(0, failedAttempt - 1)),
-    options.maxDelayMs
+    options.initialDelayMs * 2 ** Math.max(0, failedAttempt - 1),
+    options.maxDelayMs,
   )
   const minimum = exponential / 2
-  return Math.min(
-    minimum + Math.random() * (exponential - minimum),
-    options.maxDelayMs
-  )
+  return Math.min(minimum + Math.random() * (exponential - minimum), options.maxDelayMs)
 }
 
 const signalReason = (signal: AbortSignal): Error => {
@@ -57,10 +56,7 @@ export const throwIfAborted = (signal: AbortSignal): void => {
   if (signal.aborted) throw signalReason(signal)
 }
 
-export const abortableDelay = async (
-  milliseconds: number,
-  signal: AbortSignal
-): Promise<void> => {
+export const abortableDelay = async (milliseconds: number, signal: AbortSignal): Promise<void> => {
   throwIfAborted(signal)
   if (milliseconds === 0) return
 

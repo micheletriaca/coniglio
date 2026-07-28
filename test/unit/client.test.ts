@@ -5,7 +5,7 @@ import {
   ConiglioClosedError,
   ConiglioMessageStateError,
   ConiglioPublishError,
-  UnexpectedRoutingKeyError
+  UnexpectedRoutingKeyError,
 } from '../../src/errors'
 import type { ConiglioEvent, Logger } from '../../src/types'
 import { FakeBroker, waitFor } from '../helpers/fake-amqp'
@@ -20,7 +20,7 @@ const silentLogger: Logger = {}
 
 const createClient = async (
   broker: FakeBroker,
-  options: ConstructorParameters<typeof ConiglioClient<Events>>[1] = {}
+  options: ConstructorParameters<typeof ConiglioClient<Events>>[1] = {},
 ): Promise<ConiglioClient<Events>> => {
   const client = new ConiglioClient<Events>(
     'amqp://fake',
@@ -29,11 +29,11 @@ const createClient = async (
       reconnect: {
         initialDelayMs: 0,
         maxDelayMs: 0,
-        maxAttempts: 5
+        maxAttempts: 5,
       },
-      ...options
+      ...options,
     },
-    broker.connect
+    broker.connect,
   )
   await client.initialize()
   return client
@@ -49,22 +49,10 @@ describe('ConiglioClient', () => {
     await client.publish('', 'binary', Buffer.from([1, 2, 3]))
 
     assert.equal(broker.published[0]?.body.toString(), '"hello"')
-    assert.equal(
-      broker.published[0]?.options.contentType,
-      'application/json'
-    )
-    assert.deepEqual(
-      JSON.parse(broker.published[1]!.body.toString()),
-      { id: '42' }
-    )
-    assert.deepEqual(
-      broker.published[2]?.body,
-      Buffer.from([1, 2, 3])
-    )
-    assert.equal(
-      broker.published[2]?.options.contentType,
-      'application/octet-stream'
-    )
+    assert.equal(broker.published[0]?.options.contentType, 'application/json')
+    assert.deepEqual(JSON.parse(broker.published[1]!.body.toString()), { id: '42' })
+    assert.deepEqual(broker.published[2]?.body, Buffer.from([1, 2, 3]))
+    assert.equal(broker.published[2]?.options.contentType, 'application/octet-stream')
 
     await client.close()
   })
@@ -75,10 +63,7 @@ describe('ConiglioClient', () => {
     const circular: Record<string, unknown> = {}
     circular.self = circular
 
-    await assert.rejects(
-      client.publish('', 'created', circular as Events['created']),
-      TypeError
-    )
+    await assert.rejects(client.publish('', 'created', circular as Events['created']), TypeError)
     assert.equal(broker.published.length, 0)
 
     await client.close()
@@ -97,16 +82,16 @@ describe('ConiglioClient', () => {
         retry: {
           initialDelayMs: 0,
           maxDelayMs: 0,
-          maxAttempts: 2
-        }
-      }
+          maxAttempts: 2,
+        },
+      },
     )
     assert.equal(broker.published.length, 2)
 
     broker.confirmFailuresRemaining = 1
     await assert.rejects(
       client.publish('', 'created', { id: 'once' }, { retry: false }),
-      ConiglioPublishError
+      ConiglioPublishError,
     )
     assert.equal(broker.published.length, 3)
 
@@ -125,10 +110,10 @@ describe('ConiglioClient', () => {
         { id: 'timeout' },
         {
           retry: false,
-          confirmTimeoutMs: 5
-        }
+          confirmTimeoutMs: 5,
+        },
       ),
-      ConiglioPublishError
+      ConiglioPublishError,
     )
 
     const controller = new AbortController()
@@ -138,8 +123,8 @@ describe('ConiglioClient', () => {
       { id: 'abort' },
       {
         signal: controller.signal,
-        confirmTimeoutMs: Infinity
-      }
+        confirmTimeoutMs: Infinity,
+      },
     )
     controller.abort(new Error('stop publishing'))
     await assert.rejects(publishing, /stop publishing/)
@@ -156,9 +141,9 @@ describe('ConiglioClient', () => {
         {
           name: 'zero-limits',
           messageTtl: 0,
-          maxLength: 0
-        }
-      ]
+          maxLength: 0,
+        },
+      ],
     })
     await client.configure({
       queues: [
@@ -168,20 +153,17 @@ describe('ConiglioClient', () => {
           bindTo: [
             {
               exchange: 'events',
-              routingKey: 'updated'
-            }
-          ]
-        }
-      ]
+              routingKey: 'updated',
+            },
+          ],
+        },
+      ],
     })
 
-    assert.deepEqual(
-      broker.assertedQueues[0]?.options?.arguments,
-      {
-        'x-message-ttl': 0,
-        'x-max-length': 0
-      }
-    )
+    assert.deepEqual(broker.assertedQueues[0]?.options?.arguments, {
+      'x-message-ttl': 0,
+      'x-max-length': 0,
+    })
     await client.close()
   })
 
@@ -223,14 +205,16 @@ describe('ConiglioClient', () => {
     }
     await invalidIterator.return(undefined)
 
-    const rawIterator = client.listen('raw', {
-      json: false
-    })[Symbol.asyncIterator]()
+    const rawIterator = client
+      .listen('raw', {
+        json: false,
+      })
+      [Symbol.asyncIterator]()
     const rawPending = rawIterator.next()
     await waitFor(
       () =>
         broker.latestConnection.consumers.length === 2 &&
-        broker.latestConsumer.delivery !== undefined
+        broker.latestConsumer.delivery !== undefined,
     )
     broker.latestConsumer.deliver('created', { id: 'still-raw' })
     const raw = await rawPending
@@ -249,9 +233,7 @@ describe('ConiglioClient', () => {
     const client = await createClient(broker)
 
     await client.configure({
-      exchanges: [
-        { name: 'events', type: 'topic', durable: false }
-      ],
+      exchanges: [{ name: 'events', type: 'topic', durable: false }],
       queues: [
         {
           name: 'jobs',
@@ -259,11 +241,11 @@ describe('ConiglioClient', () => {
           bindTo: [
             {
               exchange: 'events',
-              routingKey: 'created'
-            }
-          ]
-        }
-      ]
+              routingKey: 'created',
+            },
+          ],
+        },
+      ],
     })
 
     const iterator = client.listen('jobs')[Symbol.asyncIterator]()
@@ -276,37 +258,23 @@ describe('ConiglioClient', () => {
 
     broker.latestConnection.breakConnection()
     await waitFor(
-      () =>
-        broker.connections.length === 2 &&
-        broker.latestConnection.consumers.length === 1
+      () => broker.connections.length === 2 && broker.latestConnection.consumers.length === 1,
     )
 
-    const secondConnectionOperations = broker.operations.filter(
-      operation => operation.startsWith('connection:2:')
+    const secondConnectionOperations = broker.operations.filter((operation) =>
+      operation.startsWith('connection:2:'),
     )
     assert.ok(
-      secondConnectionOperations.indexOf(
-        'connection:2:assertExchange:events:topic'
-      ) <
-      secondConnectionOperations.indexOf(
-        'connection:2:consume:jobs'
-      )
+      secondConnectionOperations.indexOf('connection:2:assertExchange:events:topic') <
+        secondConnectionOperations.indexOf('connection:2:consume:jobs'),
     )
     assert.ok(
-      secondConnectionOperations.indexOf(
-        'connection:2:bind:jobs:events:created'
-      ) <
-      secondConnectionOperations.indexOf(
-        'connection:2:consume:jobs'
-      )
+      secondConnectionOperations.indexOf('connection:2:bind:jobs:events:created') <
+        secondConnectionOperations.indexOf('connection:2:consume:jobs'),
     )
     assert.ok(
-      secondConnectionOperations.indexOf(
-        'connection:2:bind:jobs:events:updated'
-      ) <
-      secondConnectionOperations.indexOf(
-        'connection:2:consume:jobs'
-      )
+      secondConnectionOperations.indexOf('connection:2:bind:jobs:events:updated') <
+        secondConnectionOperations.indexOf('connection:2:consume:jobs'),
     )
 
     const secondPending = iterator.next()
@@ -322,7 +290,7 @@ describe('ConiglioClient', () => {
     await client.close()
   })
 
-  it('recovers an isolated consumer channel without reconnecting', async () => {
+  it('reconnects when a consumer channel closes', async () => {
     const broker = new FakeBroker()
     const client = await createClient(broker)
     const iterator = client.listen('jobs')[Symbol.asyncIterator]()
@@ -332,12 +300,10 @@ describe('ConiglioClient', () => {
     const firstConsumer = broker.latestConsumer
     await firstConsumer.close()
     await waitFor(
-      () =>
-        broker.latestConnection.consumers.length === 2 &&
-        broker.latestConsumer.delivery !== undefined
+      () => broker.connections.length === 2 && broker.latestConnection.consumers.length === 1,
     )
 
-    assert.equal(broker.connections.length, 1)
+    assert.equal(broker.connections.length, 2)
     const recoveredConsumer = broker.latestConsumer
     recoveredConsumer.deliver('created', { id: 'recovered' })
     const delivery = await firstPending
@@ -359,10 +325,7 @@ describe('ConiglioClient', () => {
     await waitFor(() => broker.connections.length === 2)
     await client.publish('', 'created', { id: 'after-publisher-close' })
 
-    assert.equal(
-      broker.published.at(-1)?.body.toString(),
-      '{"id":"after-publisher-close"}'
-    )
+    assert.equal(broker.published.at(-1)?.body.toString(), '{"id":"after-publisher-close"}')
     await client.close()
   })
 
@@ -370,18 +333,23 @@ describe('ConiglioClient', () => {
     const broker = new FakeBroker()
     const events: ConiglioEvent[] = []
     const client = await createClient(broker, {
-      onEvent: event => events.push(event)
+      onEvent: (event) => events.push(event),
     })
 
     assert.equal(client.state, 'ready')
     broker.confirmFailuresRemaining = 1
-    await client.publish('', 'created', { id: 'observed' }, {
-      retry: {
-        initialDelayMs: 0,
-        maxDelayMs: 0,
-        maxAttempts: 2
-      }
-    })
+    await client.publish(
+      '',
+      'created',
+      { id: 'observed' },
+      {
+        retry: {
+          initialDelayMs: 0,
+          maxDelayMs: 0,
+          maxAttempts: 2,
+        },
+      },
+    )
 
     const iterator = client.listen('jobs')[Symbol.asyncIterator]()
     const pending = iterator.next()
@@ -397,26 +365,14 @@ describe('ConiglioClient', () => {
     await client.close()
 
     assert.equal(client.state, 'closed')
-    const eventTypes = events.map(event => event.type)
+    const eventTypes = events.map((event) => event.type)
     assert.ok(eventTypes.includes('publish-retry'))
     assert.ok(eventTypes.includes('publish-confirmed'))
     assert.ok(eventTypes.includes('consumer-ready'))
     assert.ok(eventTypes.includes('consumer-cancelled'))
     assert.ok(eventTypes.includes('connection-retry'))
-    assert.ok(
-      events.some(
-        event =>
-          event.type === 'state' &&
-          event.state === 'reconnecting'
-      )
-    )
-    assert.ok(
-      events.some(
-        event =>
-          event.type === 'state' &&
-          event.state === 'closed'
-      )
-    )
+    assert.ok(events.some((event) => event.type === 'state' && event.state === 'reconnecting'))
+    assert.ok(events.some((event) => event.type === 'state' && event.state === 'closed'))
   })
 
   it('rejects acknowledgements from a stale delivery channel', async () => {
@@ -434,10 +390,7 @@ describe('ConiglioClient', () => {
     await waitFor(() => broker.connections.length === 2)
 
     if (!delivery.done) {
-      assert.throws(
-        () => client.ack(delivery.value),
-        ConiglioMessageStateError
-      )
+      assert.throws(() => client.ack(delivery.value), ConiglioMessageStateError)
     }
 
     await iterator.return(undefined)
@@ -447,9 +400,11 @@ describe('ConiglioClient', () => {
   it('requeues and surfaces an unexpected routing key', async () => {
     const broker = new FakeBroker()
     const client = await createClient(broker)
-    const iterator = client.listen('jobs', {
-      routingKeys: ['created']
-    })[Symbol.asyncIterator]()
+    const iterator = client
+      .listen('jobs', {
+        routingKeys: ['created'],
+      })
+      [Symbol.asyncIterator]()
     const pending = iterator.next()
 
     await waitFor(() => broker.latestConnection.consumers.length === 1)
@@ -468,9 +423,11 @@ describe('ConiglioClient', () => {
     const broker = new FakeBroker()
     const client = await createClient(broker)
     const controller = new AbortController()
-    const iterator = client.listen('jobs', {
-      signal: controller.signal
-    })[Symbol.asyncIterator]()
+    const iterator = client
+      .listen('jobs', {
+        signal: controller.signal,
+      })
+      [Symbol.asyncIterator]()
     const pending = iterator.next()
 
     await waitFor(() => broker.latestConnection.consumers.length === 1)
@@ -488,8 +445,8 @@ describe('ConiglioClient', () => {
       reconnect: {
         initialDelayMs: 100,
         maxDelayMs: 100,
-        maxAttempts: Infinity
-      }
+        maxAttempts: Infinity,
+      },
     })
 
     broker.connectFailuresRemaining = 100
@@ -498,13 +455,10 @@ describe('ConiglioClient', () => {
 
     await client.close()
     const attemptsAfterClose = broker.connectFailuresRemaining
-    await new Promise(resolve => setTimeout(resolve, 150))
+    await new Promise((resolve) => setTimeout(resolve, 150))
     assert.equal(broker.connectFailuresRemaining, attemptsAfterClose)
     await client.close()
 
-    await assert.rejects(
-      client.publish('', 'created', { id: 'closed' }),
-      ConiglioClosedError
-    )
+    await assert.rejects(client.publish('', 'created', { id: 'closed' }), ConiglioClosedError)
   })
 })

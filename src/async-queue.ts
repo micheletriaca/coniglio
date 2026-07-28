@@ -8,7 +8,7 @@ export class AsyncQueue<T> {
   private finished = false
   private failure?: unknown
 
-  push (value: T): boolean {
+  push(value: T): boolean {
     if (this.finished) return false
 
     if (this.waiter) {
@@ -22,7 +22,7 @@ export class AsyncQueue<T> {
     return true
   }
 
-  async next (): Promise<IteratorResult<T>> {
+  async next(): Promise<IteratorResult<T>> {
     if (this.values.length > 0) {
       return { done: false, value: this.values.shift()! }
     }
@@ -38,14 +38,14 @@ export class AsyncQueue<T> {
     })
   }
 
-  clear (onValue?: (value: T) => void): void {
+  clear(onValue?: (value: T) => void): void {
     if (onValue) {
       for (const value of this.values) onValue(value)
     }
     this.values.length = 0
   }
 
-  finish (error?: unknown, onValue?: (value: T) => void): void {
+  finish(error?: unknown, onValue?: (value: T) => void): void {
     if (this.finished) return
 
     this.clear(onValue)

@@ -8,7 +8,7 @@ All notable changes to this project are documented here.
 
 - Graceful, idempotent `close()` and `AbortSignal` support.
 - Dedicated consumer channels with real consumer cancellation.
-- Connection, publisher-channel and consumer-channel recovery.
+- Connection and channel recovery.
 - Stored topology replay before subscription recovery.
 - Configurable reconnect and publish retry policies.
 - Publisher-confirm timeout support.
@@ -27,6 +27,10 @@ All notable changes to this project are documented here.
 - The TypeScript configuration now uses strict mode.
 - ESM and CommonJS exports now expose the same runtime API.
 - The development dependency tree has been updated and reduced.
+- The runtime now uses amqplib 2 with its bundled TypeScript declarations.
+- The toolchain now uses TypeScript 7, oxlint, oxfmt and tsdown.
+- A consumer-channel failure now rebuilds the complete transport, avoiding a
+  second per-consumer recovery supervisor.
 
 ### Fixed
 

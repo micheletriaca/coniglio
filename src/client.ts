@@ -1,23 +1,18 @@
-import type {
-  Channel,
-  ChannelModel,
-  ConfirmChannel,
-  ConsumeMessage
-} from 'amqplib'
+import type { Channel, ChannelModel, ConfirmChannel, ConsumeMessage, SocketOptions } from 'amqplib'
 import { AsyncQueue } from './async-queue'
 import {
   ConiglioClosedError,
   ConiglioConnectionError,
   ConiglioMessageStateError,
   ConiglioPublishError,
-  UnexpectedRoutingKeyError
+  UnexpectedRoutingKeyError,
 } from './errors'
 import {
   abortableDelay,
   backoffDelay,
   normalizeRetryOptions,
   throwIfAborted,
-  type NormalizedRetryOptions
+  type NormalizedRetryOptions,
 } from './retry'
 import type {
   ConfigureOptions,
@@ -31,12 +26,12 @@ import type {
   Message,
   PublishOptions,
   QueueConfiguration,
-  RoutingKeyMap
+  RoutingKeyMap,
 } from './types'
 
 export type ConnectionFactory = (
   url: string,
-  socketOptions?: unknown
+  socketOptions?: SocketOptions,
 ) => Promise<ChannelModel>
 
 interface Subscription {
@@ -51,7 +46,6 @@ interface Subscription {
   consumerTag?: string
   generation?: number
   startPromise?: Promise<void>
-  recoveryPromise?: Promise<void>
   closePromise?: Promise<void>
   closed: boolean
 }
@@ -59,35 +53,35 @@ interface Subscription {
 const DEFAULT_RETRY: NormalizedRetryOptions = {
   initialDelayMs: 1000,
   maxDelayMs: 30000,
-  maxAttempts: Infinity
+  maxAttempts: Infinity,
 }
 
 const DEFAULT_CONFIRM_TIMEOUT_MS = 30000
 
-const cloneExchange = (
-  exchange: ExchangeConfiguration
-): ExchangeConfiguration => ({
+const cloneExchange = (exchange: ExchangeConfiguration): ExchangeConfiguration => ({
   ...exchange,
-  arguments: exchange.arguments ? { ...exchange.arguments } : undefined
+  arguments: exchange.arguments ? { ...exchange.arguments } : undefined,
 })
 
 const cloneQueue = (queue: QueueConfiguration): QueueConfiguration => ({
   ...queue,
   arguments: queue.arguments ? { ...queue.arguments } : undefined,
-  bindTo: queue.bindTo?.map(binding => ({
+  bindTo: queue.bindTo?.map((binding) => ({
     ...binding,
-    arguments: binding.arguments ? { ...binding.arguments } : undefined
-  }))
+    arguments: binding.arguments ? { ...binding.arguments } : undefined,
+  })),
 })
 
-const serialize = (payload: unknown): {
+const serialize = (
+  payload: unknown,
+): {
   body: Buffer
   contentType: string
 } => {
   if (Buffer.isBuffer(payload)) {
     return {
       body: payload,
-      contentType: 'application/octet-stream'
+      contentType: 'application/octet-stream',
     }
   }
 
@@ -98,7 +92,7 @@ const serialize = (payload: unknown): {
 
   return {
     body: Buffer.from(encoded),
-    contentType: 'application/json'
+    contentType: 'application/json',
   }
 }
 
@@ -109,7 +103,7 @@ const abortReason = (signal: AbortSignal): Error => {
 }
 
 export class ConiglioClient<
-  T extends RoutingKeyMap = Record<string, unknown>
+  T extends RoutingKeyMap = Record<string, unknown>,
 > implements ConiglioInstance<T> {
   private readonly logger: Logger
   private readonly reconnectOptions: NormalizedRetryOptions
@@ -130,16 +124,13 @@ export class ConiglioClient<
   private lifecycleState: ConiglioLifecycleState = 'idle'
   private externalSignalHandler?: () => void
 
-  constructor (
+  constructor(
     private readonly url: string,
     private readonly options: ConiglioOptions,
-    private readonly connect: ConnectionFactory
+    private readonly connect: ConnectionFactory,
   ) {
     this.logger = options.logger ?? console
-    this.reconnectOptions = normalizeRetryOptions(
-      options.reconnect,
-      DEFAULT_RETRY
-    )
+    this.reconnectOptions = normalizeRetryOptions(options.reconnect, DEFAULT_RETRY)
 
     if (
       options.prefetch !== undefined &&
@@ -149,7 +140,7 @@ export class ConiglioClient<
     }
   }
 
-  async initialize (): Promise<void> {
+  async initialize(): Promise<void> {
     if (this.options.signal?.aborted) {
       await this.close()
       throw abortReason(this.options.signal)
@@ -157,15 +148,11 @@ export class ConiglioClient<
 
     if (this.options.signal) {
       this.externalSignalHandler = () => {
-        this.close().catch(error => {
+        this.close().catch((error) => {
           this.log('error', '[coniglio] abort-driven close failed', error)
         })
       }
-      this.options.signal.addEventListener(
-        'abort',
-        this.externalSignalHandler,
-        { once: true }
-      )
+      this.options.signal.addEventListener('abort', this.externalSignalHandler, { once: true })
     }
 
     try {
@@ -176,13 +163,13 @@ export class ConiglioClient<
     }
   }
 
-  get state (): ConiglioLifecycleState {
+  get state(): ConiglioLifecycleState {
     return this.lifecycleState
   }
 
-  async * listen<K extends keyof T & string = keyof T & string> (
+  async *listen<K extends keyof T & string = keyof T & string>(
     queue: string,
-    options: ListenOptions<K> = {}
+    options: ListenOptions<K> = {},
   ): AsyncGenerator<Message<T, K>> {
     this.assertOpen()
 
@@ -199,21 +186,16 @@ export class ConiglioClient<
       routingKeys: options.routingKeys,
       signal: options.signal,
       messages: new AsyncQueue<ConsumeMessage>(),
-      closed: false
+      closed: false,
     }
 
     if (options.signal) {
       subscription.signalHandler = () => {
-        subscription.messages.finish(
-          abortReason(options.signal!),
-          message => this.deliveryChannels.delete(message)
+        subscription.messages.finish(abortReason(options.signal!), (message) =>
+          this.deliveryChannels.delete(message),
         )
       }
-      options.signal.addEventListener(
-        'abort',
-        subscription.signalHandler,
-        { once: true }
-      )
+      options.signal.addEventListener('abort', subscription.signalHandler, { once: true })
     }
 
     this.subscriptions.add(subscription)
@@ -229,22 +211,15 @@ export class ConiglioClient<
         const raw = next.value
         const routingKey = raw.fields.routingKey
 
-        if (
-          subscription.routingKeys &&
-          !subscription.routingKeys.includes(routingKey)
-        ) {
+        if (subscription.routingKeys && !subscription.routingKeys.includes(routingKey)) {
           this.nackRaw(raw, true)
-          throw new UnexpectedRoutingKeyError(
-            queue,
-            routingKey,
-            subscription.routingKeys
-          )
+          throw new UnexpectedRoutingKeyError(queue, routingKey, subscription.routingKeys)
         }
 
         const base = {
           raw,
           content: raw.content,
-          routingKey
+          routingKey,
         }
 
         if (subscription.json) {
@@ -261,7 +236,7 @@ export class ConiglioClient<
             yield {
               ...base,
               contentIsJson: true,
-              data: parsed
+              data: parsed,
             } as Message<T, K>
             continue
           }
@@ -270,7 +245,7 @@ export class ConiglioClient<
         yield {
           ...base,
           contentIsJson: false,
-          data: undefined
+          data: undefined,
         } as Message<T, K>
       }
     } finally {
@@ -278,24 +253,21 @@ export class ConiglioClient<
     }
   }
 
-  ack<K extends keyof T & string> (message: Message<T, K>): void {
+  ack<K extends keyof T & string>(message: Message<T, K>): void {
     const channel = this.getActiveDeliveryChannel(message.raw)
     channel.ack(message.raw)
     this.deliveryChannels.delete(message.raw)
   }
 
-  nack<K extends keyof T & string> (
-    message: Message<T, K>,
-    requeue = false
-  ): void {
+  nack<K extends keyof T & string>(message: Message<T, K>, requeue = false): void {
     this.nackRaw(message.raw, requeue)
   }
 
-  async publish<K extends keyof T & string> (
+  async publish<K extends keyof T & string>(
     exchange: string,
     routingKey: K,
     payload: T[K],
-    options: PublishOptions = {}
+    options: PublishOptions = {},
   ): Promise<void> {
     this.assertOpen()
 
@@ -303,8 +275,7 @@ export class ConiglioClient<
     const {
       retry,
       signal,
-      confirmTimeoutMs = this.options.publish?.confirmTimeoutMs ??
-        DEFAULT_CONFIRM_TIMEOUT_MS,
+      confirmTimeoutMs = this.options.publish?.confirmTimeoutMs ?? DEFAULT_CONFIRM_TIMEOUT_MS,
       ...amqpOptions
     } = options
 
@@ -320,7 +291,7 @@ export class ConiglioClient<
       configuredRetry === false
         ? { initialDelayMs: 0, maxDelayMs: 0, maxAttempts: 1 }
         : configuredRetry,
-      DEFAULT_RETRY
+      DEFAULT_RETRY,
     )
     const operationSignal = signal
       ? AbortSignal.any([signal, this.lifecycle.signal])
@@ -345,16 +316,16 @@ export class ConiglioClient<
           body,
           {
             ...amqpOptions,
-            contentType: amqpOptions.contentType ?? contentType
+            contentType: amqpOptions.contentType ?? contentType,
           },
           confirmTimeoutMs,
-          operationSignal
+          operationSignal,
         )
         this.emitEvent({
           type: 'publish-confirmed',
           exchange,
           routingKey,
-          attempt
+          attempt,
         })
         return
       } catch (error) {
@@ -362,7 +333,7 @@ export class ConiglioClient<
         if (attempt >= retryOptions.maxAttempts) {
           throw new ConiglioPublishError(
             `Publishing "${routingKey}" failed after ${attempt} attempt${attempt === 1 ? '' : 's'}`,
-            error
+            error,
           )
         }
 
@@ -373,19 +344,15 @@ export class ConiglioClient<
           routingKey,
           attempt,
           delayMs,
-          error
+          error,
         })
-        this.log(
-          'warn',
-          `[coniglio] publish failed for "${routingKey}", retrying`,
-          error
-        )
+        this.log('warn', `[coniglio] publish failed for "${routingKey}", retrying`, error)
         await abortableDelay(delayMs, operationSignal)
       }
     }
   }
 
-  async configure (options: ConfigureOptions): Promise<void> {
+  async configure(options: ConfigureOptions): Promise<void> {
     this.assertOpen()
 
     const operation = this.configurationTail.then(async () => {
@@ -403,29 +370,26 @@ export class ConiglioClient<
     await operation
   }
 
-  async close (): Promise<void> {
+  async close(): Promise<void> {
     if (this.closePromise) return await this.closePromise
     this.closePromise = this.performClose()
     return await this.closePromise
   }
 
-  private async performClose (): Promise<void> {
+  private async performClose(): Promise<void> {
     if (this.closed) return
     this.closed = true
     this.setState('closing')
     this.lifecycle.abort(new ConiglioClosedError())
 
     if (this.options.signal && this.externalSignalHandler) {
-      this.options.signal.removeEventListener(
-        'abort',
-        this.externalSignalHandler
-      )
+      this.options.signal.removeEventListener('abort', this.externalSignalHandler)
     }
 
     await Promise.all(
-      [...this.subscriptions].map(async subscription => {
+      [...this.subscriptions].map(async (subscription) => {
         await this.unregisterSubscription(subscription)
-      })
+      }),
     )
 
     const connection = this.connection
@@ -444,14 +408,11 @@ export class ConiglioClient<
     this.log('debug', '[coniglio] client closed')
   }
 
-  private assertOpen (): void {
+  private assertOpen(): void {
     if (this.closed) throw new ConiglioClosedError()
   }
 
-  private log (
-    level: 'debug' | 'info' | 'warn' | 'error',
-    ...args: unknown[]
-  ): void {
+  private log(level: 'debug' | 'info' | 'warn' | 'error', ...args: unknown[]): void {
     try {
       this.logger[level]?.(...args)
     } catch {
@@ -459,7 +420,7 @@ export class ConiglioClient<
     }
   }
 
-  private emitEvent (event: ConiglioEvent): void {
+  private emitEvent(event: ConiglioEvent): void {
     try {
       this.options.onEvent?.(event)
     } catch {
@@ -467,27 +428,22 @@ export class ConiglioClient<
     }
   }
 
-  private setState (
-    state: ConiglioLifecycleState,
-    reason?: string
-  ): void {
+  private setState(state: ConiglioLifecycleState, reason?: string): void {
     if (this.lifecycleState === state && reason === undefined) return
     this.lifecycleState = state
     this.emitEvent({
       type: 'state',
       state,
-      ...(reason === undefined ? {} : { reason })
+      ...(reason === undefined ? {} : { reason }),
     })
   }
 
-  private async ensureConnected (): Promise<void> {
+  private async ensureConnected(): Promise<void> {
     this.assertOpen()
     if (this.connection && this.publisher) return
 
     if (!this.connecting) {
-      this.setState(
-        this.generation === 0 ? 'connecting' : 'reconnecting'
-      )
+      this.setState(this.generation === 0 ? 'connecting' : 'reconnecting')
       this.connecting = this.connectLoop()
     }
 
@@ -499,7 +455,7 @@ export class ConiglioClient<
     }
   }
 
-  private async connectLoop (): Promise<void> {
+  private async connectLoop(): Promise<void> {
     for (let attempt = 1; ; attempt++) {
       this.assertOpen()
       let connection: ChannelModel | undefined
@@ -521,11 +477,7 @@ export class ConiglioClient<
 
         for (const subscription of [...this.subscriptions]) {
           if (!subscription.closed) {
-            await this.startSubscriptionOn(
-              subscription,
-              connection,
-              generation
-            )
+            await this.startSubscriptionOn(subscription, connection, generation)
           }
         }
 
@@ -534,86 +486,61 @@ export class ConiglioClient<
           this.publisher !== publisher ||
           this.generation !== generation
         ) {
-          throw new ConiglioConnectionError(
-            'Connection closed while recovery was in progress'
-          )
+          throw new ConiglioConnectionError('Connection closed while recovery was in progress')
         }
 
         this.setState('ready')
         this.log('info', '[coniglio] connection ready')
         return
       } catch (error) {
-        await this.discardTransportAttempt(
-          connection,
-          publisher,
-          generation
-        )
+        await this.discardTransportAttempt(connection, publisher, generation)
 
         if (this.closed) throw new ConiglioClosedError()
         if (attempt >= this.reconnectOptions.maxAttempts) {
           const failure = new ConiglioConnectionError(
             `Connecting to RabbitMQ failed after ${attempt} attempt${attempt === 1 ? '' : 's'}`,
-            error
+            error,
           )
           this.setState('disconnected', 'retry budget exhausted')
           this.failSubscriptions(failure)
           throw failure
         }
 
-        const delayMs = backoffDelay(
-          attempt,
-          this.reconnectOptions
-        )
+        const delayMs = backoffDelay(attempt, this.reconnectOptions)
         this.emitEvent({
           type: 'connection-retry',
           attempt,
           delayMs,
-          error
+          error,
         })
-        this.log(
-          'warn',
-          `[coniglio] connection attempt ${attempt} failed, retrying`,
-          error
-        )
+        this.log('warn', `[coniglio] connection attempt ${attempt} failed, retrying`, error)
         await abortableDelay(delayMs, this.lifecycle.signal)
       }
     }
   }
 
-  private attachTransportListeners (
+  private attachTransportListeners(
     connection: ChannelModel,
     publisher: ConfirmChannel,
-    generation: number
+    generation: number,
   ): void {
-    connection.on('error', error => {
+    connection.on('error', (error) => {
       this.log('error', '[coniglio] connection error', error)
     })
     connection.once('close', () => {
       this.handleTransportLost(connection, generation, 'connection closed')
     })
 
-    publisher.on('error', error => {
+    publisher.on('error', (error) => {
       this.log('error', '[coniglio] publisher channel error', error)
     })
     publisher.once('close', () => {
-      this.handleTransportLost(
-        connection,
-        generation,
-        'publisher channel closed'
-      )
+      this.handleTransportLost(connection, generation, 'publisher channel closed')
     })
   }
 
-  private handleTransportLost (
-    connection: ChannelModel,
-    generation: number,
-    reason: string
-  ): void {
-    if (
-      this.closed ||
-      this.connection !== connection ||
-      this.generation !== generation
-    ) {
+  private handleTransportLost(connection: ChannelModel, generation: number, reason: string): void {
+    if (this.closed || this.connection !== connection || this.generation !== generation) {
       return
     }
 
@@ -626,67 +553,54 @@ export class ConiglioClient<
     this.publisher = undefined
 
     for (const subscription of this.subscriptions) {
-      if (
-        subscription.channel &&
-        subscription.generation === generation
-      ) {
+      if (subscription.channel && subscription.generation === generation) {
         consumerChannels.push(subscription.channel)
+        this.emitEvent({
+          type: 'consumer-lost',
+          queue: subscription.queueName,
+        })
         this.clearSubscriptionTransport(subscription)
       }
     }
 
-    this.disposeTransport(
-      connection,
-      publisher,
-      consumerChannels
-    ).catch(error => {
+    this.disposeTransport(connection, publisher, consumerChannels).catch((error) => {
       this.log('error', '[coniglio] transport cleanup failed', error)
     })
-    this.ensureConnected().catch(error => {
+    this.ensureConnected().catch((error) => {
       if (!this.closed) {
         this.log('error', '[coniglio] reconnect failed', error)
       }
     })
   }
 
-  private async discardTransportAttempt (
+  private async discardTransportAttempt(
     connection: ChannelModel | undefined,
     publisher: ConfirmChannel | undefined,
-    generation: number | undefined
+    generation: number | undefined,
   ): Promise<void> {
     const consumerChannels: Channel[] = []
 
-    if (
-      connection &&
-      this.connection === connection
-    ) {
+    if (connection && this.connection === connection) {
       this.connection = undefined
       this.publisher = undefined
     }
 
     if (generation !== undefined) {
       for (const subscription of this.subscriptions) {
-        if (
-          subscription.channel &&
-          subscription.generation === generation
-        ) {
+        if (subscription.channel && subscription.generation === generation) {
           consumerChannels.push(subscription.channel)
           this.clearSubscriptionTransport(subscription)
         }
       }
     }
 
-    await this.disposeTransport(
-      connection,
-      publisher,
-      consumerChannels
-    )
+    await this.disposeTransport(connection, publisher, consumerChannels)
   }
 
-  private async disposeTransport (
+  private async disposeTransport(
     connection: ChannelModel | undefined,
     publisher: ConfirmChannel | undefined,
-    consumerChannels: readonly Channel[]
+    consumerChannels: readonly Channel[],
   ): Promise<void> {
     connection?.removeAllListeners('error')
     connection?.removeAllListeners('close')
@@ -700,17 +614,15 @@ export class ConiglioClient<
     }
 
     await Promise.all([
-      ...consumerChannels.map(async channel => {
+      ...consumerChannels.map(async (channel) => {
         await channel.close().catch(() => {})
       }),
-      publisher?.close().catch(() => {})
+      publisher?.close().catch(() => {}),
     ])
     await connection?.close().catch(() => {})
   }
 
-  private async ensureSubscriptionOnCurrentTransport (
-    subscription: Subscription
-  ): Promise<void> {
+  private async ensureSubscriptionOnCurrentTransport(subscription: Subscription): Promise<void> {
     while (!subscription.closed) {
       await this.ensureConnected()
       const connection = this.connection
@@ -718,64 +630,41 @@ export class ConiglioClient<
       if (!connection) continue
 
       try {
-        await this.startSubscriptionOn(
-          subscription,
-          connection,
-          generation
-        )
+        await this.startSubscriptionOn(subscription, connection, generation)
       } catch (error) {
         if (
           !this.closed &&
           !subscription.closed &&
-          (
-            this.connection !== connection ||
-            this.generation !== generation
-          )
+          (this.connection !== connection || this.generation !== generation)
         ) {
           continue
         }
         throw error
       }
 
-      if (
-        subscription.channel &&
-        subscription.generation === generation
-      ) {
+      if (subscription.channel && subscription.generation === generation) {
         return
       }
     }
   }
 
-  private async startSubscriptionOn (
+  private async startSubscriptionOn(
     subscription: Subscription,
     connection: ChannelModel,
-    generation: number
+    generation: number,
   ): Promise<void> {
-    if (
-      subscription.closed ||
-      (
-        subscription.channel &&
-        subscription.generation === generation
-      )
-    ) {
+    if (subscription.closed || (subscription.channel && subscription.generation === generation)) {
       return
     }
 
     if (subscription.startPromise) {
       await subscription.startPromise
-      if (
-        subscription.channel &&
-        subscription.generation === generation
-      ) {
+      if (subscription.channel && subscription.generation === generation) {
         return
       }
     }
 
-    const start = this.createConsumer(
-      subscription,
-      connection,
-      generation
-    )
+    const start = this.createConsumer(subscription, connection, generation)
     subscription.startPromise = start
 
     try {
@@ -787,10 +676,10 @@ export class ConiglioClient<
     }
   }
 
-  private async createConsumer (
+  private async createConsumer(
     subscription: Subscription,
     connection: ChannelModel,
-    generation: number
+    generation: number,
   ): Promise<void> {
     let channel: Channel | undefined
 
@@ -810,26 +699,30 @@ export class ConiglioClient<
       subscription.generation = generation
       this.activeConsumerChannels.add(channel)
 
-      channel.on('error', error => {
+      channel.on('error', (error) => {
         this.log(
           'error',
           `[coniglio] consumer channel error for "${subscription.queueName}"`,
-          error
+          error,
         )
       })
       channel.once('close', () => {
-        this.handleSubscriptionLost(subscription, channel!, generation)
+        this.handleTransportLost(
+          connection,
+          generation,
+          `consumer channel closed for "${subscription.queueName}"`,
+        )
       })
 
       await channel.prefetch(subscription.prefetch)
       const reply = await channel.consume(
         subscription.queueName,
-        message => {
+        (message) => {
           if (message === null) {
-            this.handleSubscriptionLost(
-              subscription,
-              channel!,
-              generation
+            this.handleTransportLost(
+              connection,
+              generation,
+              `consumer cancelled for "${subscription.queueName}"`,
             )
             return
           }
@@ -849,18 +742,15 @@ export class ConiglioClient<
             channel!.nack(message, false, true)
           }
         },
-        { noAck: false }
+        { noAck: false },
       )
       subscription.consumerTag = reply.consumerTag
       this.emitEvent({
         type: 'consumer-ready',
         queue: subscription.queueName,
-        consumerTag: reply.consumerTag
+        consumerTag: reply.consumerTag,
       })
-      this.log(
-        'debug',
-        `[coniglio] consuming "${subscription.queueName}" as ${reply.consumerTag}`
-      )
+      this.log('debug', `[coniglio] consuming "${subscription.queueName}" as ${reply.consumerTag}`)
     } catch (error) {
       if (channel && subscription.channel === channel) {
         this.clearSubscriptionTransport(subscription)
@@ -875,99 +765,7 @@ export class ConiglioClient<
     }
   }
 
-  private handleSubscriptionLost (
-    subscription: Subscription,
-    channel: Channel,
-    generation: number
-  ): void {
-    if (
-      subscription.closed ||
-      subscription.channel !== channel ||
-      subscription.generation !== generation
-    ) {
-      return
-    }
-
-    this.emitEvent({
-      type: 'consumer-lost',
-      queue: subscription.queueName
-    })
-    this.log(
-      'warn',
-      `[coniglio] consumer for "${subscription.queueName}" closed; recovering`
-    )
-    this.clearSubscriptionTransport(subscription)
-    channel.close().catch(() => {})
-    this.recoverSubscription(subscription).catch(error => {
-      if (!subscription.closed && !this.closed) {
-        this.log(
-          'error',
-          `[coniglio] consumer recovery failed for "${subscription.queueName}"`,
-          error
-        )
-      }
-    })
-  }
-
-  private async recoverSubscription (
-    subscription: Subscription
-  ): Promise<void> {
-    if (subscription.recoveryPromise) {
-      return await subscription.recoveryPromise
-    }
-
-    const recovery = (async () => {
-      for (let attempt = 1; !subscription.closed; attempt++) {
-        try {
-          await this.ensureSubscriptionOnCurrentTransport(subscription)
-          return
-        } catch (error) {
-          if (subscription.closed || this.closed) return
-          if (attempt >= this.reconnectOptions.maxAttempts) {
-            subscription.messages.finish(
-              new ConiglioConnectionError(
-                `Consumer "${subscription.queueName}" recovery failed after ${attempt} attempts`,
-                error
-              ),
-              message => this.deliveryChannels.delete(message)
-            )
-            return
-          }
-
-          const delayMs = backoffDelay(
-            attempt,
-            this.reconnectOptions
-          )
-          this.emitEvent({
-            type: 'consumer-retry',
-            queue: subscription.queueName,
-            attempt,
-            delayMs,
-            error
-          })
-          this.log(
-            'warn',
-            `[coniglio] consumer recovery attempt ${attempt} failed for "${subscription.queueName}"`,
-            error
-          )
-          await abortableDelay(delayMs, this.lifecycle.signal)
-        }
-      }
-    })()
-
-    subscription.recoveryPromise = recovery
-    try {
-      await recovery
-    } finally {
-      if (subscription.recoveryPromise === recovery) {
-        subscription.recoveryPromise = undefined
-      }
-    }
-  }
-
-  private clearSubscriptionTransport (
-    subscription: Subscription
-  ): void {
+  private clearSubscriptionTransport(subscription: Subscription): void {
     if (subscription.channel) {
       this.activeConsumerChannels.delete(subscription.channel)
       subscription.channel.removeAllListeners('error')
@@ -976,14 +774,12 @@ export class ConiglioClient<
     subscription.channel = undefined
     subscription.consumerTag = undefined
     subscription.generation = undefined
-    subscription.messages.clear(message => {
+    subscription.messages.clear((message) => {
       this.deliveryChannels.delete(message)
     })
   }
 
-  private async unregisterSubscription (
-    subscription: Subscription
-  ): Promise<void> {
+  private async unregisterSubscription(subscription: Subscription): Promise<void> {
     if (subscription.closePromise) {
       return await subscription.closePromise
     }
@@ -993,16 +789,10 @@ export class ConiglioClient<
       this.subscriptions.delete(subscription)
 
       if (subscription.signal && subscription.signalHandler) {
-        subscription.signal.removeEventListener(
-          'abort',
-          subscription.signalHandler
-        )
+        subscription.signal.removeEventListener('abort', subscription.signalHandler)
       }
 
-      subscription.messages.finish(
-        undefined,
-        message => this.deliveryChannels.delete(message)
-      )
+      subscription.messages.finish(undefined, (message) => this.deliveryChannels.delete(message))
 
       const channel = subscription.channel
       const consumerTag = subscription.consumerTag
@@ -1016,7 +806,7 @@ export class ConiglioClient<
       }
       this.emitEvent({
         type: 'consumer-cancelled',
-        queue: subscription.queueName
+        queue: subscription.queueName,
       })
     })()
 
@@ -1024,7 +814,7 @@ export class ConiglioClient<
     return await close
   }
 
-  private getActiveDeliveryChannel (message: ConsumeMessage): Channel {
+  private getActiveDeliveryChannel(message: ConsumeMessage): Channel {
     const channel = this.deliveryChannels.get(message)
     if (!channel || !this.activeConsumerChannels.has(channel)) {
       throw new ConiglioMessageStateError()
@@ -1032,20 +822,20 @@ export class ConiglioClient<
     return channel
   }
 
-  private nackRaw (message: ConsumeMessage, requeue: boolean): void {
+  private nackRaw(message: ConsumeMessage, requeue: boolean): void {
     const channel = this.getActiveDeliveryChannel(message)
     channel.nack(message, false, requeue)
     this.deliveryChannels.delete(message)
   }
 
-  private async publishAndConfirm (
+  private async publishAndConfirm(
     channel: ConfirmChannel,
     exchange: string,
     routingKey: string,
     body: Buffer,
     options: PublishOptions,
     confirmTimeoutMs: number,
-    signal: AbortSignal
+    signal: AbortSignal,
   ): Promise<void> {
     throwIfAborted(signal)
 
@@ -1069,45 +859,37 @@ export class ConiglioClient<
         timer = setTimeout(() => {
           finish(
             new ConiglioPublishError(
-              `RabbitMQ did not confirm "${routingKey}" within ${confirmTimeoutMs}ms`
-            )
+              `RabbitMQ did not confirm "${routingKey}" within ${confirmTimeoutMs}ms`,
+            ),
           )
         }, confirmTimeoutMs)
       }
 
       try {
-        channel.publish(
-          exchange,
-          routingKey,
-          body,
-          options,
-          error => finish(error ?? undefined)
-        )
+        channel.publish(exchange, routingKey, body, options, (error) => finish(error ?? undefined))
       } catch (error) {
         finish(error)
       }
     })
   }
 
-  private async applyStoredTopology (
-    channel: ConfirmChannel
-  ): Promise<void> {
+  private async applyStoredTopology(channel: ConfirmChannel): Promise<void> {
     await this.applyConfiguration(channel, {
       exchanges: [...this.exchanges.values()],
-      queues: [...this.queues.values()]
+      queues: [...this.queues.values()],
     })
   }
 
-  private async applyConfiguration (
+  private async applyConfiguration(
     channel: ConfirmChannel,
-    options: ConfigureOptions
+    options: ConfigureOptions,
   ): Promise<void> {
     for (const exchange of options.exchanges ?? []) {
       await channel.assertExchange(exchange.name, exchange.type, {
         durable: exchange.durable,
         autoDelete: exchange.autoDelete,
         internal: exchange.internal,
-        arguments: exchange.arguments
+        arguments: exchange.arguments,
       })
     }
 
@@ -1121,27 +903,18 @@ export class ConiglioClient<
           ...(queue.deadLetterExchange !== undefined
             ? { 'x-dead-letter-exchange': queue.deadLetterExchange }
             : {}),
-          ...(queue.messageTtl !== undefined
-            ? { 'x-message-ttl': queue.messageTtl }
-            : {}),
-          ...(queue.maxLength !== undefined
-            ? { 'x-max-length': queue.maxLength }
-            : {})
-        }
+          ...(queue.messageTtl !== undefined ? { 'x-message-ttl': queue.messageTtl } : {}),
+          ...(queue.maxLength !== undefined ? { 'x-max-length': queue.maxLength } : {}),
+        },
       })
 
       for (const binding of queue.bindTo ?? []) {
-        await channel.bindQueue(
-          queue.name,
-          binding.exchange,
-          binding.routingKey,
-          binding.arguments
-        )
+        await channel.bindQueue(queue.name, binding.exchange, binding.routingKey, binding.arguments)
       }
     }
   }
 
-  private rememberConfiguration (options: ConfigureOptions): void {
+  private rememberConfiguration(options: ConfigureOptions): void {
     for (const exchange of options.exchanges ?? []) {
       this.exchanges.set(exchange.name, cloneExchange(exchange))
     }
@@ -1153,28 +926,23 @@ export class ConiglioClient<
 
       for (const binding of bindings) {
         uniqueBindings.set(
-          [
-            binding.exchange,
-            binding.routingKey,
-            JSON.stringify(binding.arguments ?? {})
-          ].join('\u0000'),
-          binding
+          [binding.exchange, binding.routingKey, JSON.stringify(binding.arguments ?? {})].join(
+            '\u0000',
+          ),
+          binding,
         )
       }
 
       this.queues.set(queue.name, {
         ...cloned,
-        bindTo: [...uniqueBindings.values()]
+        bindTo: [...uniqueBindings.values()],
       })
     }
   }
 
-  private failSubscriptions (error: unknown): void {
+  private failSubscriptions(error: unknown): void {
     for (const subscription of this.subscriptions) {
-      subscription.messages.finish(
-        error,
-        message => this.deliveryChannels.delete(message)
-      )
+      subscription.messages.finish(error, (message) => this.deliveryChannels.delete(message))
     }
   }
 }

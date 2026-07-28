@@ -6,7 +6,7 @@ type Events = {
 
 const connection = coniglio<Events>('amqp://localhost')
 
-void connection.then(async client => {
+void connection.then(async (client) => {
   await client.publish('', 'ready', { ok: true })
   await client.close()
 })

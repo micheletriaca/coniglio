@@ -1,4 +1,4 @@
-import type { ConsumeMessage, Options } from 'amqplib'
+import type { ConsumeMessage, Options, SocketOptions } from 'amqplib'
 
 export interface Logger {
   debug?(...args: unknown[]): void
@@ -28,50 +28,43 @@ export type ConiglioLifecycleState =
 
 export type ConiglioEvent =
   | {
-    type: 'state'
-    state: ConiglioLifecycleState
-    reason?: string
-  }
+      type: 'state'
+      state: ConiglioLifecycleState
+      reason?: string
+    }
   | {
-    type: 'connection-retry'
-    attempt: number
-    delayMs: number
-    error: unknown
-  }
+      type: 'connection-retry'
+      attempt: number
+      delayMs: number
+      error: unknown
+    }
   | {
-    type: 'consumer-ready'
-    queue: string
-    consumerTag: string
-  }
+      type: 'consumer-ready'
+      queue: string
+      consumerTag: string
+    }
   | {
-    type: 'consumer-lost'
-    queue: string
-  }
+      type: 'consumer-lost'
+      queue: string
+    }
   | {
-    type: 'consumer-retry'
-    queue: string
-    attempt: number
-    delayMs: number
-    error: unknown
-  }
+      type: 'consumer-cancelled'
+      queue: string
+    }
   | {
-    type: 'consumer-cancelled'
-    queue: string
-  }
+      type: 'publish-confirmed'
+      exchange: string
+      routingKey: string
+      attempt: number
+    }
   | {
-    type: 'publish-confirmed'
-    exchange: string
-    routingKey: string
-    attempt: number
-  }
-  | {
-    type: 'publish-retry'
-    exchange: string
-    routingKey: string
-    attempt: number
-    delayMs: number
-    error: unknown
-  }
+      type: 'publish-retry'
+      exchange: string
+      routingKey: string
+      attempt: number
+      delayMs: number
+      error: unknown
+    }
 
 export interface ConiglioOptions {
   logger?: Logger
@@ -84,7 +77,7 @@ export interface ConiglioOptions {
     confirmTimeoutMs?: number
   }
   signal?: AbortSignal
-  socketOptions?: unknown
+  socketOptions?: SocketOptions
 }
 
 interface MessageBase<K extends string> {
@@ -105,7 +98,7 @@ type RawMessage<K extends string> = MessageBase<K> & {
 
 export type Message<
   T extends RoutingKeyMap = RoutingKeyMap,
-  K extends keyof T & string = keyof T & string
+  K extends keyof T & string = keyof T & string,
 > = {
   [P in K]: JsonMessage<P, T[P]> | RawMessage<P>
 }[K]
@@ -164,27 +157,22 @@ export interface ConfigureOptions {
   queues?: readonly QueueConfiguration[]
 }
 
-export interface ConiglioInstance<
-  T extends RoutingKeyMap = Record<string, unknown>
-> {
+export interface ConiglioInstance<T extends RoutingKeyMap = Record<string, unknown>> {
   readonly state: ConiglioLifecycleState
 
   listen<K extends keyof T & string = keyof T & string>(
     queue: string,
-    options?: ListenOptions<K>
+    options?: ListenOptions<K>,
   ): AsyncGenerator<Message<T, K>>
 
   ack<K extends keyof T & string>(message: Message<T, K>): void
-  nack<K extends keyof T & string>(
-    message: Message<T, K>,
-    requeue?: boolean
-  ): void
+  nack<K extends keyof T & string>(message: Message<T, K>, requeue?: boolean): void
 
   publish<K extends keyof T & string>(
     exchange: string,
     routingKey: K,
     payload: T[K],
-    options?: PublishOptions
+    options?: PublishOptions,
   ): Promise<void>
 
   configure(options: ConfigureOptions): Promise<void>

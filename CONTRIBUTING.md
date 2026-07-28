@@ -10,8 +10,10 @@ npm ci
 npm run check
 ```
 
-`npm run check` runs lint, strict TypeScript checking, unit tests, the package
-build, and ESM/CommonJS public-API tests.
+`npm run check` runs oxlint, an oxfmt check, strict TypeScript checking, unit
+tests, the package build, and ESM/CommonJS public-API tests.
+
+Run `npm run lint:fix` and `npm run format` before submitting a change.
 
 ## RabbitMQ integration tests
 

@@ -1,8 +1,4 @@
-import coniglio, {
-  type ConiglioInstance,
-  type ConiglioOptions,
-  type Message
-} from 'coniglio'
+import coniglio, { type ConiglioInstance, type ConiglioOptions, type Message } from 'coniglio'
 
 type Events = {
   'user.created': { userId: string }
@@ -16,18 +12,18 @@ const options: ConiglioOptions = {
   reconnect: {
     initialDelayMs: 10,
     maxDelayMs: 100,
-    maxAttempts: 3
+    maxAttempts: 3,
   },
-  onEvent (event) {
+  onEvent(event) {
     if (event.type === 'state') {
       event.state.toUpperCase()
     }
-  }
+  },
 }
 
 const connection = coniglio<Events>('amqp://localhost', options)
 
-async function exercise (client: ConiglioInstance<Events>): Promise<void> {
+async function exercise(client: ConiglioInstance<Events>): Promise<void> {
   client.state.toUpperCase()
   await client.publish(
     'events',
@@ -36,8 +32,8 @@ async function exercise (client: ConiglioInstance<Events>): Promise<void> {
     {
       persistent: true,
       confirmTimeoutMs: 1000,
-      retry: false
-    }
+      retry: false,
+    },
   )
 
   // @ts-expect-error unknown routing key
@@ -46,7 +42,7 @@ async function exercise (client: ConiglioInstance<Events>): Promise<void> {
   await client.publish('events', 'invoice.sent', { userId: '42' })
 
   for await (const message of client.listen('users', {
-    routingKeys: ['user.created']
+    routingKeys: ['user.created'],
   })) {
     const narrowed: Message<Events, 'user.created'> = message
     if (narrowed.contentIsJson) {

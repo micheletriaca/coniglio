@@ -33,28 +33,20 @@ type Events = {
 const rabbit = await coniglio<Events>('amqp://localhost')
 
 await rabbit.configure({
-  exchanges: [
-    { name: 'domain.events', type: 'topic', durable: true }
-  ],
+  exchanges: [{ name: 'domain.events', type: 'topic', durable: true }],
   queues: [
     {
       name: 'users',
       durable: true,
-      bindTo: [
-        { exchange: 'domain.events', routingKey: 'user.created' }
-      ]
-    }
-  ]
+      bindTo: [{ exchange: 'domain.events', routingKey: 'user.created' }],
+    },
+  ],
 })
 
-await rabbit.publish(
-  'domain.events',
-  'user.created',
-  { userId: '42' }
-)
+await rabbit.publish('domain.events', 'user.created', { userId: '42' })
 
 for await (const message of rabbit.listen('users', {
-  routingKeys: ['user.created']
+  routingKeys: ['user.created'],
 })) {
   try {
     if (message.contentIsJson) {
@@ -78,7 +70,7 @@ await rabbit.close()
 ```ts
 const rabbit = await coniglio('amqp://localhost', {
   logger: console,
-  onEvent: event => {
+  onEvent: (event) => {
     metrics.increment(`coniglio.${event.type}`)
   },
   json: true,
@@ -86,20 +78,20 @@ const rabbit = await coniglio('amqp://localhost', {
   reconnect: {
     initialDelayMs: 1000,
     maxDelayMs: 30000,
-    maxAttempts: Infinity
+    maxAttempts: Infinity,
   },
   publish: {
     confirmTimeoutMs: 30000,
     retry: {
       initialDelayMs: 1000,
       maxDelayMs: 30000,
-      maxAttempts: Infinity
-    }
+      maxAttempts: Infinity,
+    },
   },
   signal: applicationAbortController.signal,
   socketOptions: {
-    timeout: 10000
-  }
+    timeout: 10000,
+  },
 })
 ```
 
@@ -128,7 +120,7 @@ Pino and `console` can be passed directly.
 for await (const message of rabbit.listen('users', {
   prefetch: 20,
   json: true,
-  signal: workerAbortController.signal
+  signal: workerAbortController.signal,
 })) {
   if (message.contentIsJson) {
     console.log(message.data)
@@ -149,7 +141,7 @@ closing the client cancels the RabbitMQ consumer and closes its channel.
 
 ```ts
 for await (const message of rabbit.listen('users', {
-  routingKeys: ['user.created']
+  routingKeys: ['user.created'],
 })) {
   if (message.contentIsJson) {
     message.data.userId
@@ -181,7 +173,7 @@ Non-Buffer values are always encoded using `JSON.stringify()`:
 
 ```ts
 await rabbit.publish('domain.events', 'user.created', {
-  userId: '42'
+  userId: '42',
 })
 
 // The wire body is the valid JSON string: "hello"
@@ -210,10 +202,10 @@ await rabbit.publish(
     retry: {
       initialDelayMs: 100,
       maxDelayMs: 5000,
-      maxAttempts: 8
+      maxAttempts: 8,
     },
-    signal: requestAbortController.signal
-  }
+    signal: requestAbortController.signal,
+  },
 )
 ```
 
@@ -233,16 +225,16 @@ await rabbit.configure({
     {
       name: 'domain.events',
       type: 'topic',
-      durable: true
+      durable: true,
     },
     {
       name: 'delayed.events',
       type: 'x-delayed-message',
       durable: true,
       arguments: {
-        'x-delayed-type': 'topic'
-      }
-    }
+        'x-delayed-type': 'topic',
+      },
+    },
   ],
   queues: [
     {
@@ -254,11 +246,11 @@ await rabbit.configure({
       bindTo: [
         {
           exchange: 'domain.events',
-          routingKey: 'invoice.*'
-        }
-      ]
-    }
-  ]
+          routingKey: 'invoice.*',
+        },
+      ],
+    },
+  ],
 })
 ```
 
@@ -273,7 +265,7 @@ Coniglio uses exponential backoff with jitter.
 
 - A connection or publisher-channel close rebuilds the full transport.
 - Each listener has an isolated consumer channel.
-- A consumer-channel close rebuilds only that subscription.
+- A consumer-channel close rebuilds the complete transport.
 - Stored topology is applied before subscriptions restart.
 - Buffered deliveries from a closed channel are left for RabbitMQ to requeue.
 - Pending listeners survive reconnect unless their retry budget is exhausted.
@@ -296,7 +288,7 @@ Use `onEvent` for metrics and tracing:
 
 ```ts
 const rabbit = await coniglio('amqp://localhost', {
-  onEvent (event) {
+  onEvent(event) {
     switch (event.type) {
       case 'connection-retry':
         metrics.increment('rabbitmq.connection.retry')
@@ -304,16 +296,16 @@ const rabbit = await coniglio('amqp://localhost', {
         break
       case 'consumer-ready':
         metrics.increment('rabbitmq.consumer.ready', {
-          queue: event.queue
+          queue: event.queue,
         })
         break
       case 'publish-confirmed':
         metrics.increment('rabbitmq.publish.confirmed', {
-          routingKey: event.routingKey
+          routingKey: event.routingKey,
         })
         break
     }
-  }
+  },
 })
 ```
 
@@ -330,10 +322,7 @@ const qa = await coniglio('amqp://qa')
 await production.publish('events', 'ready', { environment: 'production' })
 await qa.publish('events', 'ready', { environment: 'qa' })
 
-await Promise.all([
-  production.close(),
-  qa.close()
-])
+await Promise.all([production.close(), qa.close()])
 ```
 
 ## Public types and errors
@@ -352,7 +341,7 @@ import coniglio, {
   type ConiglioLifecycleState,
   type ConiglioOptions,
   type Message,
-  type PublishOptions
+  type PublishOptions,
 } from 'coniglio'
 ```
 
