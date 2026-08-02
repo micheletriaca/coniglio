@@ -126,13 +126,49 @@ export class FakeChannel extends EventEmitter {
       options,
     })
 
-    if (this.broker.withholdConfirms) return true
+    const confirm = () => {
+      if (options.mandatory && this.broker.unroutableRoutingKeys.has(routingKey)) {
+        this.emit('return', {
+          content: Buffer.from(body),
+          fields: {
+            deliveryTag: 0,
+            redelivered: false,
+            exchange,
+            routingKey,
+            replyCode: 312,
+            replyText: 'NO_ROUTE',
+          },
+          properties: {
+            contentType: options.contentType,
+            contentEncoding: options.contentEncoding,
+            headers: options.headers,
+            deliveryMode: options.deliveryMode,
+            priority: options.priority,
+            correlationId: options.correlationId,
+            replyTo: options.replyTo,
+            expiration: options.expiration,
+            messageId: options.messageId,
+            timestamp: options.timestamp,
+            type: options.type,
+            userId: options.userId,
+            appId: options.appId,
+            clusterId: undefined,
+          },
+        })
+      }
 
-    const error =
-      this.broker.confirmFailuresRemaining > 0 ? new Error('Publisher confirm rejected') : undefined
-    if (error) this.broker.confirmFailuresRemaining--
+      if (this.broker.withholdConfirms) return
 
-    queueMicrotask(() => callback(error ?? null, error ? undefined : {}))
+      const error =
+        this.broker.confirmFailuresRemaining > 0
+          ? new Error('Publisher confirm rejected')
+          : undefined
+      if (error) this.broker.confirmFailuresRemaining--
+
+      callback(error ?? null, error ? undefined : {})
+    }
+
+    queueMicrotask(confirm)
     return true
   }
 
@@ -217,6 +253,7 @@ export class FakeBroker {
   readonly operations: string[] = []
   readonly published: PublishedMessage[] = []
   readonly assertedQueues: AssertedQueue[] = []
+  readonly unroutableRoutingKeys = new Set<string>()
   confirmFailuresRemaining = 0
   withholdConfirms = false
   connectFailuresRemaining = 0

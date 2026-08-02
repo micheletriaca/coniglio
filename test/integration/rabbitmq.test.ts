@@ -3,10 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { describe, it } from 'node:test'
 import amqplib, { type ChannelModel } from 'amqplib'
 import coniglio from '../../src'
-import { ConiglioClosedError } from '../../src/errors'
+import { ConiglioClosedError, ConiglioUnroutableError } from '../../src/errors'
 
 type Events = {
   created: { id: string }
+  missing: { id: string }
   text: string
 }
 
@@ -89,6 +90,28 @@ describe('RabbitMQ integration', () => {
             ],
           }),
           stage,
+        )
+
+        stage = 'mandatory unroutable publish'
+        await assert.rejects(
+          within(
+            client.publish(
+              exchange,
+              'missing',
+              { id: 'unroutable' },
+              { mandatory: true, retry: false },
+            ),
+            stage,
+          ),
+          (error) => {
+            assert.ok(error instanceof ConiglioUnroutableError)
+            assert.equal(error.exchange, exchange)
+            assert.equal(error.routingKey, 'missing')
+            assert.notEqual(error.messageId, '')
+            assert.equal(error.replyCode, 312)
+            assert.equal(error.replyText, 'NO_ROUTE')
+            return true
+          },
         )
 
         stage = 'first consumer startup'

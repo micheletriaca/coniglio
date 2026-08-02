@@ -1,4 +1,10 @@
-import coniglio, { type ConiglioInstance, type ConiglioOptions, type Message } from 'coniglio'
+import coniglio, {
+  type ConiglioInstance,
+  type ConiglioOptions,
+  ConiglioPublishTimeoutError,
+  ConiglioUnroutableError,
+  type Message,
+} from 'coniglio'
 
 type Events = {
   'user.created': { userId: string }
@@ -56,3 +62,14 @@ async function exercise(client: ConiglioInstance<Events>): Promise<void> {
 }
 
 connection.then(exercise).catch(() => {})
+
+const timeout = new ConiglioPublishTimeoutError('user.created', 1000)
+timeout.routingKey.toUpperCase()
+timeout.timeoutMs.toFixed()
+
+const returned = new ConiglioUnroutableError('events', 'user.created', 'event-1', 312, 'NO_ROUTE')
+returned.exchange.toUpperCase()
+returned.routingKey.toUpperCase()
+returned.messageId.toUpperCase()
+returned.replyCode?.toFixed()
+returned.replyText?.toUpperCase()

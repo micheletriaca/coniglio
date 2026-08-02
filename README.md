@@ -217,6 +217,24 @@ publish a duplicate. Consumers should be idempotent when duplicates matter.
 
 Serialization errors are returned immediately and are never retried.
 
+Set `mandatory: true` when the caller must know that a message reached at least
+one queue. RabbitMQ returns unroutable mandatory messages and Coniglio rejects
+the publish immediately with `ConiglioUnroutableError`, without waiting for the
+publisher confirm. These definitive failures are never retried. The error
+includes the exchange, routing key, message ID and RabbitMQ reply code and text.
+
+Coniglio generates a message ID when a mandatory publish does not provide one.
+Concurrent returns are correlated independently from that application-visible
+ID, so the same message ID can safely be reused by overlapping attempts.
+Coniglio adds a reserved `x-coniglio-publish-token` header to mandatory
+publishes for this correlation; callers should not assign meaning to it.
+
+A publisher-confirm timeout has an unknown outcome: RabbitMQ might have accepted
+the message even though the confirmation did not arrive in time. Coniglio
+retries `ConiglioPublishTimeoutError` according to the configured publish retry
+policy. With `retry: false`, or after the retry budget is exhausted, the typed
+timeout error is returned directly to the caller.
+
 ## Topology
 
 ```ts
@@ -334,6 +352,8 @@ import coniglio, {
   ConiglioClosedError,
   ConiglioMessageStateError,
   ConiglioPublishError,
+  ConiglioPublishTimeoutError,
+  ConiglioUnroutableError,
   UnexpectedRoutingKeyError,
   type ConfigureOptions,
   type ConiglioInstance,

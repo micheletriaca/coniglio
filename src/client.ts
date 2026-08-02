@@ -1,10 +1,20 @@
-import type { Channel, ChannelModel, ConfirmChannel, ConsumeMessage, SocketOptions } from 'amqplib'
+import { randomUUID } from 'node:crypto'
+import type {
+  Channel,
+  ChannelModel,
+  ConfirmChannel,
+  ConsumeMessage,
+  Message as AmqpMessage,
+  SocketOptions,
+} from 'amqplib'
 import { AsyncQueue } from './async-queue'
 import {
   ConiglioClosedError,
   ConiglioConnectionError,
   ConiglioMessageStateError,
   ConiglioPublishError,
+  ConiglioPublishTimeoutError,
+  ConiglioUnroutableError,
   UnexpectedRoutingKeyError,
 } from './errors'
 import {
@@ -50,6 +60,21 @@ interface Subscription {
   closed: boolean
 }
 
+interface PendingMandatoryPublish {
+  exchange: string
+  routingKey: string
+  messageId: string
+  returned?: ConiglioUnroutableError
+  finish?: (error?: unknown) => void
+}
+
+type ReturnedMessage = AmqpMessage & {
+  fields: AmqpMessage['fields'] & {
+    replyCode?: number
+    replyText?: string
+  }
+}
+
 const DEFAULT_RETRY: NormalizedRetryOptions = {
   initialDelayMs: 1000,
   maxDelayMs: 30000,
@@ -57,6 +82,7 @@ const DEFAULT_RETRY: NormalizedRetryOptions = {
 }
 
 const DEFAULT_CONFIRM_TIMEOUT_MS = 30000
+const RETURN_TOKEN_HEADER = 'x-coniglio-publish-token'
 
 const cloneExchange = (exchange: ExchangeConfiguration): ExchangeConfiguration => ({
   ...exchange,
@@ -113,6 +139,10 @@ export class ConiglioClient<
   private readonly activeConsumerChannels = new Set<Channel>()
   private readonly exchanges = new Map<string, ExchangeConfiguration>()
   private readonly queues = new Map<string, QueueConfiguration>()
+  private readonly pendingMandatoryPublishes = new Map<
+    ConfirmChannel,
+    Map<string, PendingMandatoryPublish>
+  >()
 
   private connection?: ChannelModel
   private publisher?: ConfirmChannel
@@ -279,6 +309,10 @@ export class ConiglioClient<
       ...amqpOptions
     } = options
 
+    if (amqpOptions.mandatory && !amqpOptions.messageId) {
+      amqpOptions.messageId = randomUUID()
+    }
+
     if (
       confirmTimeoutMs !== Infinity &&
       (!Number.isFinite(confirmTimeoutMs) || confirmTimeoutMs <= 0)
@@ -330,7 +364,9 @@ export class ConiglioClient<
         return
       } catch (error) {
         if (operationSignal.aborted) throw abortReason(operationSignal)
+        if (error instanceof ConiglioUnroutableError) throw error
         if (attempt >= retryOptions.maxAttempts) {
+          if (error instanceof ConiglioPublishTimeoutError) throw error
           throw new ConiglioPublishError(
             `Publishing "${routingKey}" failed after ${attempt} attempt${attempt === 1 ? '' : 's'}`,
             error,
@@ -534,6 +570,10 @@ export class ConiglioClient<
     publisher.on('error', (error) => {
       this.log('error', '[coniglio] publisher channel error', error)
     })
+    this.pendingMandatoryPublishes.set(publisher, new Map())
+    publisher.on('return', (message) => {
+      this.handleReturnedMessage(publisher, message as ReturnedMessage)
+    })
     publisher.once('close', () => {
       this.handleTransportLost(connection, generation, 'publisher channel closed')
     })
@@ -606,6 +646,8 @@ export class ConiglioClient<
     connection?.removeAllListeners('close')
     publisher?.removeAllListeners('error')
     publisher?.removeAllListeners('close')
+    publisher?.removeAllListeners('return')
+    if (publisher) this.pendingMandatoryPublishes.delete(publisher)
 
     for (const channel of consumerChannels) {
       this.activeConsumerChannels.delete(channel)
@@ -839,6 +881,31 @@ export class ConiglioClient<
   ): Promise<void> {
     throwIfAborted(signal)
 
+    const returnToken = options.mandatory ? randomUUID() : undefined
+    const pendingReturns = returnToken ? this.pendingMandatoryPublishes.get(channel) : undefined
+    if (returnToken && !pendingReturns) {
+      throw new ConiglioConnectionError('Publisher return handler is unavailable')
+    }
+
+    const pending: PendingMandatoryPublish | undefined = returnToken
+      ? {
+          exchange,
+          routingKey,
+          messageId: String(options.messageId),
+        }
+      : undefined
+    const publishOptions = returnToken
+      ? {
+          ...options,
+          headers: {
+            ...(options.headers ?? {}),
+            [RETURN_TOKEN_HEADER]: returnToken,
+          },
+        }
+      : options
+
+    if (returnToken && pending && pendingReturns) pendingReturns.set(returnToken, pending)
+
     await new Promise<void>((resolve, reject) => {
       let settled = false
       let timer: NodeJS.Timeout | undefined
@@ -848,29 +915,51 @@ export class ConiglioClient<
         settled = true
         if (timer) clearTimeout(timer)
         signal.removeEventListener('abort', onAbort)
+        if (returnToken) pendingReturns?.delete(returnToken)
         if (error !== undefined) reject(error)
         else resolve()
       }
 
       const onAbort = () => finish(abortReason(signal))
+      if (pending) pending.finish = finish
       signal.addEventListener('abort', onAbort, { once: true })
+      if (signal.aborted) {
+        onAbort()
+        return
+      }
 
       if (confirmTimeoutMs !== Infinity) {
         timer = setTimeout(() => {
-          finish(
-            new ConiglioPublishError(
-              `RabbitMQ did not confirm "${routingKey}" within ${confirmTimeoutMs}ms`,
-            ),
-          )
+          finish(new ConiglioPublishTimeoutError(routingKey, confirmTimeoutMs))
         }, confirmTimeoutMs)
       }
 
       try {
-        channel.publish(exchange, routingKey, body, options, (error) => finish(error ?? undefined))
+        channel.publish(exchange, routingKey, body, publishOptions, (error) =>
+          finish(pending?.returned ?? error ?? undefined),
+        )
       } catch (error) {
         finish(error)
       }
     })
+  }
+
+  private handleReturnedMessage(channel: ConfirmChannel, message: ReturnedMessage): void {
+    const returnToken = message.properties.headers?.[RETURN_TOKEN_HEADER]
+    if (typeof returnToken !== 'string') return
+
+    const pending = this.pendingMandatoryPublishes.get(channel)?.get(returnToken)
+    if (!pending) return
+
+    const error = new ConiglioUnroutableError(
+      message.fields.exchange || pending.exchange,
+      message.fields.routingKey || pending.routingKey,
+      String(message.properties.messageId ?? pending.messageId),
+      message.fields.replyCode,
+      message.fields.replyText,
+    )
+    pending.returned = error
+    pending.finish?.(error)
   }
 
   private async applyStoredTopology(channel: ConfirmChannel): Promise<void> {

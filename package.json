@@ -1,6 +1,6 @@
 {
   "name": "coniglio",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "A minimal, elegant, and robust async RabbitMQ client for Node.js",
   "keywords": [
     "amqp",
@@ -59,7 +59,7 @@
     "test": "npm run test:unit",
     "test:unit": "tsx --test test/unit/**/*.test.ts",
     "test:integration": "tsx --test test/integration/**/*.test.ts",
-    "test:package": "node --test test/package/**/*.test.mjs",
+    "test:package": "node --experimental-test-module-mocks --test test/package/**/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "prepare": "npm run build",
     "prepublishOnly": "npm run check"

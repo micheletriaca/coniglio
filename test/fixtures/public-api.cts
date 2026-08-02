@@ -12,3 +12,5 @@ void connection.then(async (client) => {
 })
 
 void coniglio.ConiglioClosedError
+void coniglio.ConiglioPublishTimeoutError
+void coniglio.ConiglioUnroutableError

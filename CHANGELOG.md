@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## 2.2.0
+
+### Added
+
+- Added `ConiglioUnroutableError` for mandatory messages that RabbitMQ cannot
+  route, including the broker reply code and text.
+- Added `ConiglioPublishTimeoutError` for publisher confirms with an unknown
+  outcome.
+
+### Changed
+
+- Mandatory publishes now receive a generated message ID when one is not
+  provided and reject immediately when RabbitMQ returns the message, without
+  waiting for a publisher confirm.
+- Concurrent mandatory returns are correlated per publish attempt through one
+  publisher-channel listener without changing application message IDs.
+- Confirm timeouts follow the configured publish retry policy and retain their
+  typed error after the retry budget is exhausted.
+
 ## 2.1.0
 
 ### Changed

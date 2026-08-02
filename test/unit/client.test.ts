@@ -5,6 +5,8 @@ import {
   ConiglioClosedError,
   ConiglioMessageStateError,
   ConiglioPublishError,
+  ConiglioPublishTimeoutError,
+  ConiglioUnroutableError,
   UnexpectedRoutingKeyError,
 } from '../../src/errors'
 import type { ConiglioEvent, Logger } from '../../src/types'
@@ -12,6 +14,8 @@ import { FakeBroker, waitFor } from '../helpers/fake-amqp'
 
 type Events = {
   created: { id: string }
+  missing: { id: string }
+  ready: { id: string }
   text: string
   binary: Buffer
 }
@@ -98,7 +102,7 @@ describe('ConiglioClient', () => {
     await client.close()
   })
 
-  it('times out and aborts publisher confirms', async () => {
+  it('returns typed timeouts and retries them according to policy', async () => {
     const broker = new FakeBroker()
     const client = await createClient(broker)
     broker.withholdConfirms = true
@@ -113,8 +117,32 @@ describe('ConiglioClient', () => {
           confirmTimeoutMs: 5,
         },
       ),
-      ConiglioPublishError,
+      (error) => {
+        assert.ok(error instanceof ConiglioPublishTimeoutError)
+        assert.equal(error.routingKey, 'created')
+        assert.equal(error.timeoutMs, 5)
+        return true
+      },
     )
+    assert.equal(broker.published.length, 1)
+
+    await assert.rejects(
+      client.publish(
+        '',
+        'created',
+        { id: 'retried-timeout' },
+        {
+          retry: {
+            initialDelayMs: 0,
+            maxDelayMs: 0,
+            maxAttempts: 2,
+          },
+          confirmTimeoutMs: 5,
+        },
+      ),
+      ConiglioPublishTimeoutError,
+    )
+    assert.equal(broker.published.length, 3)
 
     const controller = new AbortController()
     const publishing = client.publish(
@@ -128,6 +156,102 @@ describe('ConiglioClient', () => {
     )
     controller.abort(new Error('stop publishing'))
     await assert.rejects(publishing, /stop publishing/)
+
+    await client.close()
+  })
+
+  it('rejects mandatory unroutable messages with broker details', async () => {
+    const broker = new FakeBroker()
+    broker.unroutableRoutingKeys.add('missing')
+    broker.withholdConfirms = true
+    const client = await createClient(broker)
+
+    await assert.rejects(
+      client.publish(
+        'events',
+        'missing',
+        { id: 'unroutable' },
+        {
+          mandatory: true,
+          messageId: 'event-1',
+          retry: { initialDelayMs: 0, maxDelayMs: 0, maxAttempts: 3 },
+        },
+      ),
+      (error) => {
+        assert.ok(error instanceof ConiglioUnroutableError)
+        assert.equal(error.exchange, 'events')
+        assert.equal(error.routingKey, 'missing')
+        assert.equal(error.messageId, 'event-1')
+        assert.equal(error.replyCode, 312)
+        assert.equal(error.replyText, 'NO_ROUTE')
+        return true
+      },
+    )
+
+    assert.equal(broker.published.length, 1)
+    assert.equal(broker.published[0]?.options.messageId, 'event-1')
+    await client.close()
+  })
+
+  it('generates message IDs and correlates concurrent mandatory returns per attempt', async () => {
+    const broker = new FakeBroker()
+    broker.unroutableRoutingKeys.add('missing')
+    const client = await createClient(broker)
+
+    const results = await Promise.allSettled([
+      client.publish(
+        'events',
+        'ready',
+        { id: 'routable' },
+        {
+          mandatory: true,
+          messageId: 'shared-id',
+          headers: { traceId: 'trace-1' },
+          retry: false,
+        },
+      ),
+      client.publish(
+        'events',
+        'missing',
+        { id: 'unroutable' },
+        {
+          mandatory: true,
+          messageId: 'shared-id',
+          retry: false,
+        },
+      ),
+      client.publish(
+        'events',
+        'ready',
+        { id: 'generated' },
+        {
+          mandatory: true,
+          retry: false,
+        },
+      ),
+    ])
+
+    assert.equal(results[0]?.status, 'fulfilled')
+    assert.equal(results[1]?.status, 'rejected')
+    if (results[1]?.status === 'rejected') {
+      assert.ok(results[1].reason instanceof ConiglioUnroutableError)
+    }
+    assert.equal(results[2]?.status, 'fulfilled')
+    assert.equal(broker.published[0]?.options.messageId, 'shared-id')
+    assert.equal(broker.published[0]?.options.headers.traceId, 'trace-1')
+    assert.equal(broker.published[1]?.options.messageId, 'shared-id')
+    assert.equal(typeof broker.published[2]?.options.messageId, 'string')
+    assert.notEqual(broker.published[2]?.options.messageId, '')
+    assert.equal(broker.latestConnection.publisher.listenerCount('return'), 1)
+    const pendingByChannel = (
+      client as unknown as {
+        pendingMandatoryPublishes: Map<unknown, Map<string, unknown>>
+      }
+    ).pendingMandatoryPublishes
+    assert.deepEqual(
+      [...pendingByChannel.values()].map((pending) => pending.size),
+      [0],
+    )
 
     await client.close()
   })

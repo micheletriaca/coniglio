@@ -3,7 +3,11 @@ import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { URL, fileURLToPath } from 'node:url'
 import { describe, it } from 'node:test'
-import esmConiglio, { ConiglioClosedError as EsmClosedError } from '../../lib/index.mjs'
+import esmConiglio, {
+  ConiglioClosedError as EsmClosedError,
+  ConiglioPublishTimeoutError as EsmPublishTimeoutError,
+  ConiglioUnroutableError as EsmUnroutableError,
+} from '../../lib/index.mjs'
 
 const require = createRequire(import.meta.url)
 const cjsConiglio = require('../../index.cjs')
@@ -15,7 +19,11 @@ describe('published package API', () => {
     assert.equal(typeof esmConiglio, 'function')
     assert.equal(typeof cjsConiglio, 'function')
     assert.equal(cjsConiglio.ConiglioClosedError.name, 'ConiglioClosedError')
+    assert.equal(cjsConiglio.ConiglioPublishTimeoutError.name, 'ConiglioPublishTimeoutError')
+    assert.equal(cjsConiglio.ConiglioUnroutableError.name, 'ConiglioUnroutableError')
     assert.equal(EsmClosedError.name, 'ConiglioClosedError')
+    assert.equal(EsmPublishTimeoutError.name, 'ConiglioPublishTimeoutError')
+    assert.equal(EsmUnroutableError.name, 'ConiglioUnroutableError')
   })
 
   it('exposes valid ESM and CommonJS TypeScript declarations', () => {

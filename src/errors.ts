@@ -23,6 +23,43 @@ export class ConiglioPublishError extends ConiglioError {
   }
 }
 
+export class ConiglioPublishTimeoutError extends ConiglioPublishError {
+  readonly routingKey: string
+  readonly timeoutMs: number
+
+  constructor(routingKey: string, timeoutMs: number) {
+    super(`RabbitMQ did not confirm "${routingKey}" within ${timeoutMs}ms`)
+    this.routingKey = routingKey
+    this.timeoutMs = timeoutMs
+  }
+}
+
+export class ConiglioUnroutableError extends ConiglioPublishError {
+  readonly exchange: string
+  readonly routingKey: string
+  readonly messageId: string
+  readonly replyCode: number | undefined
+  readonly replyText: string | undefined
+
+  constructor(
+    exchange: string,
+    routingKey: string,
+    messageId: string,
+    replyCode?: number,
+    replyText?: string,
+  ) {
+    const reason = replyText ? `: ${replyText}` : ''
+    super(
+      `RabbitMQ returned unroutable message "${messageId}" for "${routingKey}" on exchange "${exchange}"${reason}`,
+    )
+    this.exchange = exchange
+    this.routingKey = routingKey
+    this.messageId = messageId
+    this.replyCode = replyCode
+    this.replyText = replyText
+  }
+}
+
 export class ConiglioMessageStateError extends ConiglioError {
   constructor() {
     super(
