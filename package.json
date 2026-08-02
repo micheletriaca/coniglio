@@ -59,7 +59,7 @@
     "test": "npm run test:unit",
     "test:unit": "tsx --test test/unit/**/*.test.ts",
     "test:integration": "tsx --test test/integration/**/*.test.ts",
-    "test:package": "node --experimental-test-module-mocks --test test/package/**/*.test.mjs",
+    "test:package": "node --test test/package/**/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "prepare": "npm run build",
     "prepublishOnly": "npm run check"
